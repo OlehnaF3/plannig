@@ -1,27 +1,7 @@
 document.addEventListener('DOMContentLoaded', async () => {
   const statusEl = document.getElementById('statusMessage');
   const tokenDisplay = document.getElementById('tokenDisplay');
-  const refreshTokenBtn = document.getElementById('refreshTokenBtn');
-  const clearButton = document.getElementById('clearButton');
-  const urlInput = document.getElementById('urlInput');
-  const bodyInput = document.getElementById('bodyInput');
-  const methodSelect = document.getElementById('methodSelect');
-  const downloadCheck = document.getElementById('downloadCheck');
   const loading = document.getElementById('loading');
-  const purge = document.getElementById('purge');
-  const rebuild = document.getElementById('rebuild');
-  function getToken() {
-  const match = document.cookie.match(/(?:^|; )token=([^;]+)/);
-  if (match) return match[1];
-  if (window._csrf) return window._csrf;
-  const meta = document.querySelector('meta[name="_csrf"]');
-  if (meta) return meta.getAttribute('content');
-  try {
-    const stored = localStorage.getItem('token') || sessionStorage.getItem('token');
-    if (stored) return stored;
-  } catch (e) {}
-  return null;
-}
  const API_CONFIG = window.APP_CONFIG;
   if (!API_CONFIG) {
    console.warn('Config not loaded');
@@ -49,8 +29,8 @@ document.addEventListener('click', async (event) => {
       // const strategy = await showStrategyPopup(); 
       // await executeFlow(true, null, strategy);
       
-      // По умолчанию используем Simple (ID = '1')
-      await executeFlow(true, null, '1');
+      // По умолчанию используем упрощенную стратегию
+      await executeFlow(true, null, API_CONFIG.pickStrategyPolicyId.simplified);
       alert('✅ Планирование перестроено');
     }
   } catch (err) {
@@ -112,7 +92,7 @@ document.addEventListener('click', async (event) => {
         type: 'exec',
         mbean: 'org.springframework.amqp.rabbit.core:name=getRabbitAdmin,type=RabbitAdmin',
         operation: 'purgeQueue(java.lang.String)',
-        arguments: [`FARMLEND-${API_CONFIG.instance}-V7-ALLOC-1-0-ALLOCATE`]
+        arguments: [`${API_CONFIG.rabbitQueuePrefix}-${API_CONFIG.instance}-${API_CONFIG.rabbitQueueSuffix}`]
       })
     },
     planning: {
@@ -122,9 +102,9 @@ document.addEventListener('click', async (event) => {
         'Content-Type': 'application/json'
       },
       defaultParams: {
-        pickStrategyPolicyId: '2',
-        taskReleasePhases: ['1', '8'],
-        actions: 7
+        pickStrategyPolicyId: API_CONFIG.pickStrategyPolicyId.simplified,
+        taskReleasePhases: API_CONFIG.taskReleasePhases,
+        actions: API_CONFIG.actions
       }
     }
   };

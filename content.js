@@ -1,7 +1,7 @@
 // ======================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ========================
 
-//Получения конфига 
-//Поля baseUrl, instance, idReport
+// Получения конфига 
+// Поля: baseUrl, instance, idReport, pickStrategyPolicyId, taskReleasePhases, actions, rabbitQueuePrefix, rabbitQueueSuffix
  const API_CONFIG = window.APP_CONFIG;
   if (!API_CONFIG) {
    console.warn('Config not loaded');
@@ -251,7 +251,7 @@ async function performPurgeQueue(token) {
     type: 'exec',
     mbean: 'org.springframework.amqp.rabbit.core:name=getRabbitAdmin,type=RabbitAdmin',
     operation: 'purgeQueue(java.lang.String)',
-    arguments: [`FARMLEND-${API_CONFIG.instance}-V7-ALLOC-1-0-ALLOCATE`]
+    arguments: [`${API_CONFIG.rabbitQueuePrefix}-${API_CONFIG.instance}-${API_CONFIG.rabbitQueueSuffix}`]
   });
   const resp = await fetch(url, {
     method: 'POST',
@@ -272,9 +272,9 @@ async function sendPlanning(token, grouped, strategyId) {
     console.log(`📌 Приоритет ${p}: отправка ${ids.length} ID...`);
     const requestBody = {
       ids: ids,
-      pickStrategyPolicyId: strategyId || '1',
-      taskReleasePhases: ['1', '8'],
-      actions: 7,
+      pickStrategyPolicyId: strategyId || API_CONFIG.pickStrategyPolicyId.standard,
+      taskReleasePhases: API_CONFIG.taskReleasePhases,
+      actions: API_CONFIG.actions,
       priority: parseInt(p, 10) // всегда передаём приоритет для группы
     };
     const resp = await fetch(url, {

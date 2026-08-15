@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        /* ===== Сброс и переменные ===== */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #6C63FF;
+            --primary-dark: #5A52D5;
+            --primary-light: #8B83FF;
+            --primary-bg: #F0EEFF;
+            --success: #2ECC71;
+            --danger: #FF6B6B;
+            --warning: #F9CA24;
+            --gray: #F8F9FA;
+            --gray-border: #E9ECEF;
+            --text-primary: #2D3436;
+            --text-secondary: #636E72;
+            --shadow: 0 8px 24px rgba(108, 99, 255, 0.12);
+            --radius: 14px;
+            --radius-sm: 8px;
+            --transition: 0.2s ease;
+        }
+
+        body {
+            width: 500px;
+            padding: 14px 16px 16px;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(145deg, #F8F9FC 0%, #EEF0F5 100%);
+            color: var(--text-primary);
+            display: flex;
+            justify-content: center;
+            min-height: 280px;
+            max-height: 440px;
+            overflow: hidden;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            padding: 14px 16px 16px;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow), 0 2px 4px rgba(0, 0, 0, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+        }
+
+        /* ===== Шапка ===== */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 6px;
+            border-bottom: 2px solid rgba(108, 99, 255, 0.12);
+            flex-shrink: 0;
+        }
+
+        .header h2 {
+            font-size: 17px;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--primary), var(--primary-light));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: -0.2px;
+        }
+
+        .badge {
+            background: linear-gradient(135deg, var(--primary), var(--primary-light));
+            color: white;
+            padding: 2px 12px;
+            border-radius: 30px;
+            font-size: 10px;
+            font-weight: 600;
+            box-shadow: 0 2px 8px rgba(108, 99, 255, 0.25);
+            text-transform: uppercase;
+        }
+
+        /* ===== Токен (компактный, одна строка) ===== */
+        .token-display {
+            background: white;
+            padding: 6px 10px 6px 34px;
+            border-radius: var(--radius-sm);
+            font-size: 12px;
+            font-family: 'JetBrains Mono', 'Courier New', monospace;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+            border: 1px solid var(--gray-border);
+            position: relative;
+            line-height: 1.4;
+            min-height: 30px;
+            display: flex;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        .token-display::before {
+            content: "🔑";
+            position: absolute;
+            left: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 15px;
+        }
+
+        .token-display.warning {
+            border-left: 3px solid var(--warning);
+            background: #FFFDF0;
+        }
+        .token-display.success {
+            border-left: 3px solid var(--success);
+            background: #F0FAF4;
+        }
+        .token-display.error {
+            border-left: 3px solid var(--danger);
+            background: #FFF5F5;
+        }
+
+        /* ===== Блок функций и кнопок (две колонки) ===== */
+        .action-row {
+            display: flex;
+            gap: 10px;
+            align-items: stretch;
+            flex-shrink: 0;
+        }
+
+        .action-row .input-group {
+            flex: 2;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .action-row .input-group label {
+            font-weight: 600;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .preset-group {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .preset-btn {
+            padding: 4px 12px;
+            border: 1.5px solid var(--gray-border);
+            border-radius: 30px;
+            background: white;
+            font-size: 11px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: var(--transition);
+            white-space: nowrap;
+        }
+
+        .preset-btn:hover {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(108, 99, 255, 0.2);
+        }
+
+        /* Кнопки справа */
+        .button-group {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            justify-content: center;
+        }
+
+        .btn {
+            padding: 6px 12px;
+            border: none;
+            border-radius: var(--radius-sm);
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: var(--transition);
+            text-align: center;
+            white-space: nowrap;
+            min-height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+            box-shadow: none !important;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            color: white;
+            box-shadow: 0 3px 10px rgba(108, 99, 255, 0.25);
+        }
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(108, 99, 255, 0.3);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, var(--success), #27AE60);
+            color: white;
+            box-shadow: 0 3px 10px rgba(46, 204, 113, 0.25);
+        }
+        .btn-success:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(46, 204, 113, 0.3);
+        }
+
+        /* ===== Статус ===== */
+        .status-wrapper {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            flex-shrink: 0;
+        }
+
+        .status-wrapper label {
+            font-weight: 600;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .status-message {
+            padding: 6px 10px;
+            border-radius: var(--radius-sm);
+            font-size: 11px;
+            max-height: 64px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            background: white;
+            border: 1px solid var(--gray-border);
+            font-family: 'JetBrains Mono', 'Courier New', monospace;
+            line-height: 1.5;
+            box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.02);
+            min-height: 30px;
+        }
+
+        .status-message.success {
+            border-left: 3px solid var(--success);
+            background: #F0FAF4;
+        }
+        .status-message.error {
+            border-left: 3px solid var(--danger);
+            background: #FFF5F5;
+        }
+        .status-message.info {
+            border-left: 3px solid var(--primary);
+            background: var(--primary-bg);
+        }
+
+        .status-message .timestamp {
+            color: var(--text-secondary);
+            font-size: 9px;
+            display: block;
+            margin-top: 2px;
+            opacity: 0.6;
+        }
+
+        /* ===== Загрузка (спиннер) ===== */
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 2px 0;
+            flex-shrink: 0;
+        }
+        .spinner {
+            border: 2.5px solid rgba(108, 99, 255, 0.1);
+            border-top: 2.5px solid var(--primary);
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .loading p {
+            margin-top: 3px;
+            font-size: 11px;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        /* ===== Скрытые элементы (для совместимости со скриптом) ===== */
+        .input-group,
+        .method-selector,
+        .checkbox-group,
+        .row {
+            /* оставлены для обратной совместимости, но не используются в этом макете */
+        }
+
+        /* ===== Кастомный скролл ===== */
+        .status-message::-webkit-scrollbar {
+            width: 4px;
+        }
+        .status-message::-webkit-scrollbar-track {
+            background: var(--gray);
+            border-radius: 10px;
+        }
+        .status-message::-webkit-scrollbar-thumb {
+            background: var(--primary-light);
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2>⏳ Управление планированием</h2>
+            <span class="badge">v3.2</span>
+        </div>
+        <div id="tokenDisplay" class="token-display warning">
+            Загрузка токена...
+        </div>
+        <div class="action-row">
+            <div class="input-group">
+                <label>⚡ Функции</label>
+                <div class="preset-group">
+                    <button id="purge" class="btn btn-primary" data-preset="purge">🧹 Отчистка очереди</button>
+                    <button id="rebuild" class="btn btn-success" data-preset="rebuildPlanning">🔄 Перестроика приоритетов</button>
+                </div>
+            </div>
+        </div>
+        <div id="loading" class="loading">
+            <div class="spinner"></div>
+            <p>Отправка запроса...</p>
+        </div>
+        <div class="status-wrapper">
+            <label>📋 Статус и ответ</label>
+            <div id="statusMessage" class="status-message">Готов к работе...</div>
+        </div>
+    </div>
+	<script src="config.js"></script>
+    <script type="module" src="popup.js"></script>
+</body>
+</html>

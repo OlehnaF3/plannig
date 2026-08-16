@@ -2,41 +2,37 @@ document.addEventListener('DOMContentLoaded', async () => {
   const statusEl = document.getElementById('statusMessage');
   const tokenDisplay = document.getElementById('tokenDisplay');
   const loading = document.getElementById('loading');
- const API_CONFIG = window.APP_CONFIG;
+  const API_CONFIG = window.APP_CONFIG;
   if (!API_CONFIG) {
-   console.warn('Config not loaded');
+    console.warn('Config not loaded');
   }
 
-document.addEventListener('click', async (event) => {
-  const btn = event.target.closest('[data-preset]');
-  if (!btn) return;
+  document.addEventListener('click', async (event) => {
+    const btn = event.target.closest('[data-preset]');
+    if (!btn) return;
 
-  const presetName = btn.dataset.preset;
-  const token = fetchToken();
-  if (!token) {
-    alert('❌ Токен не найден');
-    return;
-  }
-
-  try {
-    if (presetName === 'purge') {
-      await performDownloadReport(token);
-      await performPurgeQueue(token);
-      alert('✅ Очистка очереди и скачивание отчёта выполнены');
-    } 
-    else if (presetName === 'rebuildPlanning') {
-      // Если нужен выбор стратегии - коммент убрать:
-      // const strategy = await showStrategyPopup(); 
-      // await executeFlow(true, null, strategy);
-      
-      // По умолчанию используем упрощенную стратегию
-      await executeFlow(true, null, API_CONFIG.pickStrategyPolicyId.simplified);
-      alert('✅ Планирование перестроено');
+    const presetName = btn.dataset.preset;
+    const token = await fetchToken();
+    if (!token) {
+      alert('❌ Токен не найден');
+      return;
     }
-  } catch (err) {
-    alert('❌ Ошибка: ' + err.message);
-  }
-});
+
+    try {
+      if (presetName === 'purge') {
+        await performDownloadReport(token);
+        await performPurgeQueue(token);
+        alert('✅ Очистка очереди и скачивание отчёта выполнены');
+      }
+      else if (presetName === 'rebuildPlanning') {
+        await executeFlow(true, null, API_CONFIG.pickStrategyPolicyId.simplified);
+        alert('✅ Планирование перестроено');
+      }
+    } catch (err) {
+      alert('❌ Ошибка: ' + err.message);
+    }
+  });
+
   // --- Получение токена ---
   async function fetchToken() {
     try {
@@ -49,7 +45,7 @@ document.addEventListener('click', async (event) => {
       const response = await chrome.tabs.sendMessage(tab.id, { action: 'getToken' });
       const token = response?.token;
       if (token) {
-        const displayToken = token.length > 20 ? `${token.substring(0, 15)}…${token.substring(token.length - 5)}` : token;
+        const displayToken = Utils.formatTokenDisplay(token);
         tokenDisplay.textContent = ` Токен: ${displayToken} (из куки)`;
         tokenDisplay.className = 'token-display success';
       } else {
@@ -66,274 +62,126 @@ document.addEventListener('click', async (event) => {
 
   let cachedToken = await fetchToken();
 
-  // --- Предустановки ---
-  const presets = {
-    view: {
-      url: `http://${API_CONFIG.baseUrl}:8080/api/data/flexView/so.SO_H`,
-      method: 'POST',
-      body: JSON.stringify({
-        filterValues: { 'soh.complete': 'false', 'soh.wave.planning': 'true' },
-        columns: ['soh.id', 'soh.pickPriority']
-      })
-    },
-    downloadReport: {
-	url: `http://${API_CONFIG.baseUrl}:8080/api/report/download`,
-      method: 'POST',
-      body: JSON.stringify({
-        reportDefinitionId: API_CONFIG.idReport,
-        format: 'PDF',
-        params: {}
-      })
-    },
-    purgeQueue: {
-      url:`http://${API_CONFIG.baseUrl}:8080/actuator/hawtio/console/jolokia/?maxDepth=7&maxCollectionSize=50000&ignoreErrors=true&canonicalNaming=false`,
-      method: 'POST',
-      body: JSON.stringify({
-        type: 'exec',
-        mbean: 'org.springframework.amqp.rabbit.core:name=getRabbitAdmin,type=RabbitAdmin',
-        operation: 'purgeQueue(java.lang.String)',
-        arguments: [`${API_CONFIG.rabbitQueuePrefix}-${API_CONFIG.instance}-${API_CONFIG.rabbitQueueSuffix}`]
-      })
-    },
-    planning: {
-      url: `http://${API_CONFIG.baseUrl}:8080/api/so/SOService/createTasks`,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      defaultParams: {
-        pickStrategyPolicyId: API_CONFIG.pickStrategyPolicyId.simplified,
-        taskReleasePhases: API_CONFIG.taskReleasePhases,
-        actions: API_CONFIG.actions
-      }
-    }
-  };
-  
-    async function fetchIdsFromDOM() {
-    try {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!tab) return { ids: [], pairs: {} };
-      const response = await chrome.tabs.sendMessage(tab.id, { action: 'getIdsFromDOM' });
-      return {
-        ids: response?.ids || [],
-        pairs: response?.pairs || {}
-      };
-    } catch (error) {
-      console.error('Ошибка получения ID из DOM:', error);
-      return { ids: [], pairs: {} };
-    }
-	};
-  
+  // --- Получение ID из DOM через Chrome ---
+  async function fetchIdsFromDOM() {
+    return Utils.fetchIdsFromDOM(chrome);
+  }
 
   // --- Отдельные функции для немедленного выполнения ---
-  async function performPurgeQueue() {
-    if (!cachedToken) cachedToken = await fetchToken();
-    if (!cachedToken) {
-      statusEl.textContent = '❌ Токен не получен';
-      statusEl.className = 'status-message error';
+  async function performPurgeQueue(token) {
+    if (!token) token = cachedToken;
+    if (!token) {
+      Utils.updateStatus(statusEl, '❌ Токен не получен', 'status-message error');
       return;
     }
-    statusEl.textContent = '⏳ Очистка очереди...';
-    statusEl.className = 'status-message info';
-    loading.style.display = 'block';
+    Utils.setLoading(loading, true);
     try {
-      const resp = await fetch(presets.purgeQueue.url, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${cachedToken}`,
-          'Content-Type': 'application/json'
-        },
-        body: presets.purgeQueue.body
-      });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const json = await resp.json();
-      statusEl.textContent = `✅ Очередь очищена: ${JSON.stringify(json)}`;
-      statusEl.className = 'status-message success';
+      Utils.updateStatus(statusEl, '⏳ Очистка очереди...', 'status-message info');
+      const json = await Utils.performPurgeQueue(token, API_CONFIG.baseUrl, API_CONFIG);
+      Utils.updateStatus(statusEl, `✅ Очередь очищена: ${JSON.stringify(json)}`, 'status-message success');
     } catch (err) {
-      statusEl.textContent = `❌ Ошибка: ${err.message}`;
-      statusEl.className = 'status-message error';
+      Utils.updateStatus(statusEl, `❌ Ошибка: ${err.message}`, 'status-message error');
     } finally {
-      loading.style.display = 'none';
+      Utils.setLoading(loading, false);
     }
   }
 
-  async function performDownloadReport() {
-    if (!cachedToken) cachedToken = await fetchToken();
-    if (!cachedToken) {
-      statusEl.textContent = '❌ Токен не получен';
-      statusEl.className = 'status-message error';
+  async function performDownloadReport(token) {
+    if (!token) token = cachedToken;
+    if (!token) {
+      Utils.updateStatus(statusEl, '❌ Токен не получен', 'status-message error');
       return;
     }
-    statusEl.textContent = '⏳ Скачивание отчёта...';
-    statusEl.className = 'status-message info';
-    loading.style.display = 'block';
+    Utils.setLoading(loading, true);
     try {
-      const resp = await fetch(presets.downloadReport.url, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${cachedToken}`,
-          'Content-Type': 'application/json'
-        },
-        body: presets.downloadReport.body
-      });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const blob = await resp.blob();
-      const disposition = resp.headers.get('Content-Disposition');
-      let filename = 'report.pdf';
-      if (disposition) {
-        const match = disposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
-        if (match && match[1]) filename = match[1].replace(/['"]/g, '');
-      }
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(a.href);
-      statusEl.textContent = `✅ Отчёт "${filename}" скачан (${blob.size} байт)`;
-      statusEl.className = 'status-message success';
+      Utils.updateStatus(statusEl, '⏳ Скачивание отчёта...', 'status-message info');
+      const { filename, size } = await Utils.performDownloadReport(token, API_CONFIG.baseUrl, API_CONFIG.idReport);
+      Utils.updateStatus(statusEl, `✅ Отчёт "${filename}" скачан (${size} байт)`, 'status-message success');
     } catch (err) {
-      statusEl.textContent = `❌ Ошибка: ${err.message}`;
-      statusEl.className = 'status-message error';
+      Utils.updateStatus(statusEl, `❌ Ошибка: ${err.message}`, 'status-message error');
     } finally {
-      loading.style.display = 'none';
+      Utils.setLoading(loading, false);
     }
   }
-
-
 
   async function executeFlow(rebuild) {
-  if (!cachedToken) cachedToken = await fetchToken();
-  if (!cachedToken) {
-    statusEl.textContent = '❌ Токен не получен.';
-    statusEl.className = 'status-message error';
-    return;
-  }
-  statusEl.textContent = '';
-  statusEl.className = 'status-message info';
-  loading.style.display = 'block';
+    if (!cachedToken) cachedToken = await fetchToken();
+    if (!cachedToken) {
+      Utils.updateStatus(statusEl, '❌ Токен не получен.', 'status-message error');
+      return;
+    }
+    Utils.updateStatus(statusEl, '', 'status-message info');
+    Utils.setLoading(loading, true);
 
-  const authHeaders = {
-    'Authorization': `Bearer ${cachedToken}`,
-    'Content-Type': 'application/json'
-  };
+    const authHeaders = {
+      'Authorization': `Bearer ${cachedToken}`,
+      'Content-Type': 'application/json'
+    };
 
-  try {
-    // 1) rebuild planning
-    statusEl.textContent = '⏳ 1/4 Выполнение flexView...';
-    const flexResp = await fetch(presets.view.url, {
-      method: 'POST',
-      headers: authHeaders,
-      body: presets.view.body
-    });
-    if (!flexResp.ok) throw new Error(`view: HTTP ${flexResp.status}`);
-    const flexData = await flexResp.json();
-    const data = flexData.data;
-    if (!Array.isArray(data)) throw new Error('view: неожиданный формат данных');
+    try {
+      // 1) flexView
+      Utils.updateStatus(statusEl, '⏳ 1/4 Выполнение flexView...', 'status-message info');
+      const flexData = await Utils.fetchFlexView(cachedToken, API_CONFIG.baseUrl);
+      const data = flexData.data;
+      if (!Array.isArray(data)) throw new Error('view: неожиданный формат данных');
 
-    // Формируем массив объектов из flexView
-    const flexItems = data.map(item => ({
-      id: String(item[0]),          // ID как строка
-      priority: String(item[1])     // приоритет как строка
-    }));
-
-    statusEl.textContent = `✅ flexView: получено ${flexItems.length} записей`;
-    statusEl.className = 'status-message success';
-		
-		let allItems = flexItems;
-		statusEl.textContent += `\n📦 Всего записей для группировки: ${allItems.length}`;
-	if(!rebuild)
-	{
-    // 2) Получение ID и приоритетов из DOM
-    const { ids: domIds, pairs } = await fetchIdsFromDOM();
-    let domItems = [];
-    if (domIds.length > 0) {
-      domItems = domIds.map(id => ({
-        id: String(id),
-        priority: String(pairs[id] || '0')
+      const flexItems = data.map(item => ({
+        id: String(item[0]),
+        priority: String(item[1])
       }));
-      statusEl.textContent += `\n📌 DOM: получено ${domItems.length} записей`;
-    } else {
-      statusEl.textContent += '\n📌 DOM: записи не найдены';
-    }
-		allItems = allItems.concat(domItems);
-		statusEl.textContent += `\n📦 Всего записей для группировки: ${allItems.length}`;
-	}
 
-    // 4) Группировка по приоритету
-    const grouped = {};
-    for (const { id, priority } of allItems) {
-      if (!grouped[priority]) grouped[priority] = [];
-      grouped[priority].push(id);
-    }
+      let logLines = [`✅ flexView: получено ${flexItems.length} записей`];
+      let allItems = flexItems;
 
-    // Сортируем приоритеты (как числа)
-    const sortedPriorities = Object.keys(grouped).sort((a, b) => Number(a) - Number(b));
-
-    // Вывод статистики
-    let report = '\n📊 Группировка по приоритетам:\n';
-    for (const p of sortedPriorities) {
-      report += `Приоритет ${p}: ${grouped[p].length} ID\n`;
-    }
-    statusEl.textContent += `\n${report}`;
-    statusEl.className = 'status-message success';
-
-    // 5) downloadReport
-    statusEl.textContent += '\n⏳ 2/4 Скачивание отчёта...';
-    await performDownloadReport();
-
-    // 6) purgeQueue
-    statusEl.textContent += '\n⏳ 3/4 Очистка очереди...';
-    await performPurgeQueue();
-
-    // 7) planning (отправляем grouped)
-    statusEl.textContent += '\n⏳ 4/4 Планирование задач...';
-    await sendPlanning(grouped,authHeaders);   // sendPlanning теперь принимает только grouped
-
-    statusEl.textContent += '\n✅ Все задачи запланированы!';
-    statusEl.className = 'status-message success';
-  } catch (error) {
-    statusEl.textContent += `\n❌ Ошибка: ${error.message}`;
-    statusEl.className = 'status-message error';
-  } finally {
-    loading.style.display = 'none';
-  }
-}
-
-  async function sendPlanning(grouped,authHeaders) {
-  const config = presets.planning;
-  const BATCH_SIZE = 100;
-  const sortedPriorities = Object.keys(grouped).sort((a, b) => Number(a) - Number(b));
-
-  for (const priority of sortedPriorities) {
-    const ids = grouped[priority];
-    statusEl.textContent += `\n📌 Приоритет ${priority}: ${ids.length} ID`;
-    for (let i = 0; i < ids.length; i += BATCH_SIZE) {
-      const batch = ids.slice(i, i + BATCH_SIZE);
-      const batchNum = Math.floor(i / BATCH_SIZE) + 1;
-      const requestBody = {
-        ids: batch,
-        pickStrategyPolicyId: config.defaultParams.pickStrategyPolicyId,
-        taskReleasePhases: config.defaultParams.taskReleasePhases,
-        actions: config.defaultParams.actions
-      };
-      try {
-        const resp = await fetch(config.url, {
-          method: 'POST',
-          headers: {...authHeaders},
-          body: JSON.stringify(requestBody)
-        });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        await resp.json();
-        statusEl.textContent += `\n   ✅ Батч ${batchNum} (${batch.length} ID) отправлен`;
-      } catch (err) {
-        statusEl.textContent += `\n   ❌ Батч ${batchNum}: ${err.message}`;
-        throw err;
+      if (!rebuild) {
+        // 2) Получение ID и приоритетов из DOM
+        const { ids: domIds, pairs } = await fetchIdsFromDOM();
+        let domItems = [];
+        if (domIds.length > 0) {
+          domItems = domIds.map(id => ({
+            id: String(id),
+            priority: String(pairs[id] || '0')
+          }));
+          logLines.push(`📌 DOM: получено ${domItems.length} записей`);
+        } else {
+          logLines.push('📌 DOM: записи не найдены');
+        }
+        allItems = allItems.concat(domItems);
       }
-      await new Promise(resolve => setTimeout(resolve, 300));
+      logLines.push(`📦 Всего записей для группировки: ${allItems.length}`);
+
+      // 3) Группировка по приоритету
+      const grouped = Utils.groupByPriority(allItems);
+      const sortedPriorities = Object.keys(grouped).sort((a, b) => Number(a) - Number(b));
+
+      let report = '\n📊 Группировка по приоритетам:\n';
+      for (const p of sortedPriorities) {
+        report += `Приоритет ${p}: ${grouped[p].length} ID\n`;
+      }
+      Utils.updateStatus(statusEl, logLines.join('\n') + '\n' + report, 'status-message success');
+
+      // 4) downloadReport
+      Utils.updateStatus(statusEl, statusEl.textContent + '\n⏳ 2/4 Скачивание отчёта...', 'status-message info');
+      await performDownloadReport();
+
+      // 5) purgeQueue
+      Utils.updateStatus(statusEl, statusEl.textContent + '\n⏳ 3/4 Очистка очереди...', 'status-message info');
+      await performPurgeQueue();
+
+      // 6) planning (батчинг)
+      Utils.updateStatus(statusEl, statusEl.textContent + '\n⏳ 4/4 Планирование задач...', 'status-message info');
+      await Utils.sendPlanningBatched(authHeaders, API_CONFIG, grouped, statusEl, (msg) => {
+        const current = statusEl.textContent;
+        Utils.updateStatus(statusEl, current + '\n' + msg, current.includes('❌') ? 'status-message error' : 'status-message success');
+      });
+
+      Utils.updateStatus(statusEl, statusEl.textContent + '\n✅ Все задачи запланированы!', 'status-message success');
+    } catch (error) {
+      Utils.updateStatus(statusEl, statusEl.textContent + `\n❌ Ошибка: ${error.message}`, 'status-message error');
+    } finally {
+      Utils.setLoading(loading, false);
     }
   }
-}
-
 
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.action === 'tokenUpdated') fetchToken();

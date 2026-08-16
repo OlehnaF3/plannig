@@ -1,8 +1,10 @@
 // ======================== ОБЩИЕ УТИЛИТЫ ========================
-// Этот файл подключается в manifest.json как web_accessible_resource
+// Этот файл подключается как обычный скрипт (content_scripts + popup.html)
+
+// ======================== ТОКЕН И DOM ========================
 
 // Получение токена из различных источников
-export function getToken() {
+function getToken() {
   const match = document.cookie.match(/(?:^|; )token=([^;]+)/);
   if (match) return match[1];
   if (window._csrf) return window._csrf;
@@ -16,7 +18,7 @@ export function getToken() {
 }
 
 // Синхронное получение ID из DOM
-export function getIdsFromDOM() {
+function getIdsFromDOM() {
   const containers = document.querySelectorAll('app-screen-engine.active.ng-star-inserted');
   const ids = [];
   const pairs = {};
@@ -40,8 +42,8 @@ export function getIdsFromDOM() {
   return { ids, pairs };
 }
 
-// Получение ID из DOM через сообщение Chrome
-export async function fetchIdsFromDOM(chrome) {
+// Получение ID из DOM через сообщение Chrome (для popup)
+async function fetchIdsFromDOM(chrome) {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab) return { ids: [], pairs: {} };
@@ -59,7 +61,7 @@ export async function fetchIdsFromDOM(chrome) {
 // ======================== API ФУНКЦИИ ========================
 
 // Получение данных из FlexView
-export async function fetchFlexView(token, baseUrl) {
+async function fetchFlexView(token, baseUrl) {
   const url = `http://${baseUrl}:8080/api/data/flexView/so.SO_H`;
   const body = JSON.stringify({
     filterValues: {
@@ -82,7 +84,7 @@ export async function fetchFlexView(token, baseUrl) {
 }
 
 // Скачивание отчёта
-export async function performDownloadReport(token, baseUrl, idReport) {
+async function performDownloadReport(token, baseUrl, idReport) {
   const url = `http://${baseUrl}:8080/api/report/download`;
   const body = JSON.stringify({
     reportDefinitionId: idReport,
@@ -111,7 +113,7 @@ export async function performDownloadReport(token, baseUrl, idReport) {
 }
 
 // Очистка очереди RabbitMQ
-export async function performPurgeQueue(token, baseUrl, config) {
+async function performPurgeQueue(token, baseUrl, config) {
   const url = `http://${baseUrl}:8080/actuator/hawtio/console/jolokia/?maxDepth=7&maxCollectionSize=50000&ignoreErrors=true&canonicalNaming=false`;
   const queueName = `${config.rabbitQueuePrefix}-${config.instance}-${config.rabbitQueueSuffix}`;
   const body = JSON.stringify({
@@ -130,8 +132,8 @@ export async function performPurgeQueue(token, baseUrl, config) {
   return json;
 }
 
-// Отправка задач в отбор
-export async function sendPlanning(token, baseUrl, config, grouped, strategyId) {
+// Отправка задач в отбор (без батчинга, для content.js)
+async function sendPlanning(token, baseUrl, config, grouped, strategyId) {
   const url = `http://${baseUrl}:8080/api/so/SOService/createTasks`;
   const sortedPriorities = Object.keys(grouped).sort((a, b) => Number(a) - Number(b));
   for (const p of sortedPriorities) {
@@ -156,7 +158,7 @@ export async function sendPlanning(token, baseUrl, config, grouped, strategyId) 
 }
 
 // Отправка задач в отбор (версия для popup.js с батчингом)
-export async function sendPlanningBatched(authHeaders, config, grouped, statusEl, logFn) {
+async function sendPlanningBatched(authHeaders, config, grouped, statusEl, logFn) {
   const url = `http://${config.baseUrl}:8080/api/so/SOService/createTasks`;
   const BATCH_SIZE = 100;
   const sortedPriorities = Object.keys(grouped).sort((a, b) => Number(a) - Number(b));
@@ -194,7 +196,7 @@ export async function sendPlanningBatched(authHeaders, config, grouped, statusEl
 // ======================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ========================
 
 // Группировка ID по приоритету
-export function groupByPriority(items) {
+function groupByPriority(items) {
   const grouped = {};
   for (const { id, priority } of items) {
     if (!grouped[priority]) grouped[priority] = [];
@@ -203,27 +205,38 @@ export function groupByPriority(items) {
   return grouped;
 }
 
-// Получение строк из DOM
-export function getIdsFromDOMRaw() {
-  const containers = document.querySelectorAll('app-screen-engine.active.ng-star-inserted');
-  const ids = [];
-  const pairs = {};
-  containers.forEach(container => {
-    const rows = container.querySelectorAll('tr.ng-star-inserted.active');
-    rows.forEach(row => {
-      const cells = row.querySelectorAll('td');
-      if (cells.length >= 12) {
-        const idDiv = cells[2].querySelector('div[style*="text-align: right;"]');
-        if (idDiv) {
-          const id = idDiv.innerText.trim();
-          if (id) {
-            const priority = cells[10].innerText.trim();
-            pairs[id] = priority || '0';
-            ids.push(id);
-          }
-        }
-      }
-    });
-  });
-  return { ids, pairs };
+// ======================== UI УТИЛИТЫ (для popup.js) ========================
+
+// Форматирование токена для отображения
+function formatTokenDisplay(token) {
+  return token.length > 20 ? `${token.substring(0, 15)}…${token.substring(token.length - 5)}` : token;
+}
+
+// Обновление статуса в popup
+function updateStatus(statusEl, text, className) {
+  statusEl.textContent = text;
+  statusEl.className = className;
+}
+
+// Загрузка (спиннер) в popup
+function setLoading(loading, visible) {
+  loading.style.display = visible ? 'block' : 'none';
+}
+
+// ======================== EXPOSE FOR ES MODULE (popup.html) ========================
+if (typeof window !== 'undefined') {
+  window.Utils = {
+    getToken,
+    getIdsFromDOM,
+    fetchIdsFromDOM,
+    fetchFlexView,
+    performDownloadReport,
+    performPurgeQueue,
+    sendPlanning,
+    sendPlanningBatched,
+    groupByPriority,
+    formatTokenDisplay,
+    updateStatus,
+    setLoading
+  };
 }

@@ -86,7 +86,7 @@ document.addEventListener('click', async (event) => {
       })
     },
     purgeQueue: {
-		url:`http://${API_CONFIG.baseUrl}:8080/actuator/hawtio/console/jolokia/?maxDepth=7&maxCollectionSize=50000&ignoreErrors=true&canonicalNaming=false`,
+      url:`http://${API_CONFIG.baseUrl}:8080/actuator/hawtio/console/jolokia/?maxDepth=7&maxCollectionSize=50000&ignoreErrors=true&canonicalNaming=false`,
       method: 'POST',
       body: JSON.stringify({
         type: 'exec',
@@ -239,7 +239,7 @@ document.addEventListener('click', async (event) => {
     statusEl.textContent = `✅ flexView: получено ${flexItems.length} записей`;
     statusEl.className = 'status-message success';
 		
-		var allItems = flexItems;
+		let allItems = flexItems;
 		statusEl.textContent += `\n📦 Всего записей для группировки: ${allItems.length}`;
 	if(!rebuild)
 	{

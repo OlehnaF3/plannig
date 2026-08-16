@@ -600,7 +600,7 @@ function addButtonsToFooter() {
       let progress = null;
       try {
         progress = showProgressPopup('Отправка выбранных строк в отбор...');
-        await executeFlow(false, priority, '1'); // стратегия по умолчанию, можно не менять
+        await executeFlow(false, priority, API_CONFIG.pickStrategyPolicyId.standard);
         progress.update('✅ Отправка успешно завершена!', true);
       } catch (err) {
         if (progress) progress.update('❌ Ошибка: ' + err.message, false);

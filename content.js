@@ -1,49 +1,8 @@
-// ======================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ========================
-
-// Получения конфига 
+// ======================== КОНФИГ ========================
 // Поля: baseUrl, instance, idReport, pickStrategyPolicyId, taskReleasePhases, actions, rabbitQueuePrefix, rabbitQueueSuffix
- const API_CONFIG = window.APP_CONFIG;
-  if (!API_CONFIG) {
-   console.warn('Config not loaded');
-  }
-  
-// Получение токена 
-function getToken() {
-  const match = document.cookie.match(/(?:^|; )token=([^;]+)/);
-  if (match) return match[1];
-  if (window._csrf) return window._csrf;
-  const meta = document.querySelector('meta[name="_csrf"]');
-  if (meta) return meta.getAttribute('content');
-  try {
-    const stored = localStorage.getItem('token') || sessionStorage.getItem('token');
-    if (stored) return stored;
-  } catch (e) {}
-  return null;
-}
-
-// Синхронное получение ID из DOM 
-function getIdsFromDOM() {
-  const containers = document.querySelectorAll('app-screen-engine.active.ng-star-inserted');
-  const ids = [];
-  const pairs = {};
-  containers.forEach(container => {
-    const rows = container.querySelectorAll('tr.ng-star-inserted.active');
-    rows.forEach(row => {
-      const cells = row.querySelectorAll('td');
-      if (cells.length >= 12) {
-        const idDiv = cells[2].querySelector('div[style*="text-align: right;"]');
-        if (idDiv) {
-          const id = idDiv.innerText.trim();
-          if (id) {
-            const priority = cells[10].innerText.trim();
-            pairs[id] = priority || '0';
-            ids.push(id);
-          }
-        }
-      }
-    });
-  });
-  return { ids, pairs };
+const API_CONFIG = window.APP_CONFIG;
+if (!API_CONFIG) {
+  console.warn('Config not loaded');
 }
 
 // ======================== ПОПАП ДЛЯ ВВОДА ПРИОРИТЕТА ========================
@@ -189,120 +148,21 @@ function showPriorityPopup() {
   });
 }
 
-// ======================== ОСНОВНЫЕ ЗАПРОСЫ ========================
-
-//Получение данных, для перепланировки 
-//Получаем айди расходов и приоритеты планирования 
-async function fetchFlexView(token) {
-  console.log('🌐 Загружаю свежие данные FlexView...');
-  const url = `http://${API_CONFIG.baseUrl}:8080/api/data/flexView/so.SO_H`;
-  const body = JSON.stringify({
-    filterValues: {
-      'soh.complete': 'false', //Завершено нет
-      'soh.wave.planning': 'true' //Планируется да 
-    },
-    columns: ['soh.id', 'soh.wave.pickPriority'] //Берем 2 поля
-  });
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    },
-    body
-  });
-  if (!resp.ok) throw new Error(`FlexView HTTP ${resp.status}`);
-  const json = await resp.json();
-  return json.data;
-}
-
-//Чистка очереди в скуле, вызов отчета, который дергает процедуру 
-async function performDownloadReport(token) {
-  const url = `http://${API_CONFIG.baseUrl}:8080/api/report/download`;
-  const body = JSON.stringify({
-	  reportDefinitionId: API_CONFIG.idReport,
-	  format: 'PDF',
-	  params: {} });
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body
-  });
-  if (!resp.ok) throw new Error(`Download report HTTP ${resp.status}`);
-  const blob = await resp.blob();
-  const disposition = resp.headers.get('Content-Disposition');
-  let filename = 'report.pdf';
-  if (disposition) {
-    const match = disposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
-    if (match && match[1]) filename = match[1].replace(/['"]/g, '');
-  }
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(a.href);
-  console.log(`✅ Отчёт "${filename}" скачан (${blob.size} байт)`);
-}
-
-//Чистка очереди rabbitmq
-async function performPurgeQueue(token) {
-  const url = `http://${API_CONFIG.baseUrl}:8080/actuator/hawtio/console/jolokia/?maxDepth=7&maxCollectionSize=50000&ignoreErrors=true&canonicalNaming=false`;
-  const body = JSON.stringify({
-    type: 'exec',
-    mbean: 'org.springframework.amqp.rabbit.core:name=getRabbitAdmin,type=RabbitAdmin',
-    operation: 'purgeQueue(java.lang.String)',
-    arguments: [`${API_CONFIG.rabbitQueuePrefix}-${API_CONFIG.instance}-${API_CONFIG.rabbitQueueSuffix}`]
-  });
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body
-  });
-  if (!resp.ok) throw new Error(`Purge queue HTTP ${resp.status}`);
-  const json = await resp.json();
-  console.log('✅ Очередь очищена:', json);
-}
-
-//Отправка в отбор 
-async function sendPlanning(token, grouped, strategyId) {
-  const url = `http://${API_CONFIG.baseUrl}:8080/api/so/SOService/createTasks`;
-  const sortedPriorities = Object.keys(grouped).sort((a, b) => Number(a) - Number(b));
-  for (const p of sortedPriorities) {
-    const ids = grouped[p];
-    console.log(`📌 Приоритет ${p}: отправка ${ids.length} ID...`);
-    const requestBody = {
-      ids: ids,
-      pickStrategyPolicyId: strategyId || API_CONFIG.pickStrategyPolicyId.standard,
-      taskReleasePhases: API_CONFIG.taskReleasePhases,
-      actions: API_CONFIG.actions,
-      priority: parseInt(p, 10) // всегда передаём приоритет для группы
-    };
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody)
-    });
-    if (!resp.ok) throw new Error(`Planning HTTP ${resp.status} for priority ${p}`);
-    await resp.json();
-    await new Promise(resolve => setTimeout(resolve, 300));
-  }
-}
-
 // ======================== ОСНОВНАЯ ЛОГИКА ========================
 
 async function executeFlow(rebuild = true, priority = null, strategyId = '1') {
-  const token = getToken();
+  const token = Utils.getToken();
   if (!token) throw new Error('Токен не найден');
   console.log('🚀 Начинаем выполнение...');
 
   console.log('⏳ 1/4 Получение ID...');
-  const flexData = await fetchFlexView(token);
+  const flexData = await Utils.fetchFlexView(token, API_CONFIG.baseUrl);
   const flexIds = flexData.map(item => ({ id: String(item[0]), priority: String(item[1]) }));
   console.log(`✅ FlexView: получено ${flexIds.length} записей`);
   
   let domIds = [];
   if (!rebuild) {
-    const { ids, pairs } = getIdsFromDOM();
+    const { ids, pairs } = Utils.getIdsFromDOM();
     domIds = ids.map(id => ({ id: String(id), priority: String(pairs[id] || '0') }));
     console.log(`📌 DOM: получено ${domIds.length} записей`);
   }
@@ -341,28 +201,28 @@ async function executeFlow(rebuild = true, priority = null, strategyId = '1') {
 	if(flexIds.length>0)
 	{	 
 	  console.log('⏳ 2/4 Скачивание отчёта...');
-	  await performDownloadReport(token);
+	  await Utils.performDownloadReport(token, API_CONFIG.baseUrl, API_CONFIG.idReport);
 
 	  console.log('⏳ 3/4 Очистка очереди...');
-	  await performPurgeQueue(token);
+	  await Utils.performPurgeQueue(token, API_CONFIG.baseUrl, API_CONFIG);
 	}
 	else
 	{
 		console.log('⏳ Пропускаем 2,3 ступень, т.к пустая очередь');
 	}
   console.log('⏳ 4/4 Отправка задач...');
-  await sendPlanning(token, grouped, strategyId);
+  await Utils.sendPlanning(token, API_CONFIG.baseUrl, API_CONFIG, grouped, strategyId);
 
   console.log('✅ Все задачи успешно запланированы!');
   return true;
 }
 
 async function executeResetFlow() {
-  const token = getToken();
+  const token = Utils.getToken();
   if (!token) throw new Error('Токен не найден');
   console.log('🚀 Сброс планирования...');
-  await performDownloadReport(token);
-  await performPurgeQueue(token);
+  await Utils.performDownloadReport(token, API_CONFIG.baseUrl, API_CONFIG.idReport);
+  await Utils.performPurgeQueue(token, API_CONFIG.baseUrl, API_CONFIG);
   console.log('✅ Сброс планирования завершён!');
   return true;
 }
@@ -675,11 +535,11 @@ setupObserver();
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'getToken') {
-    sendResponse({ token: getToken() });
+    sendResponse({ token: Utils.getToken() });
     return true;
   }
   if (request.action === 'getIdsFromDOM') {
-    const result = getIdsFromDOM();
+    const result = Utils.getIdsFromDOM();
     sendResponse(result);
     return true;
   }

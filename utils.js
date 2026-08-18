@@ -19,28 +19,66 @@ function getToken() {
 
 // Синхронное получение ID из DOM
 function getIdsFromDOM() {
-  const containers = document.querySelectorAll('app-screen-engine.active.ng-star-inserted');
-  const ids = [];
-  const pairs = {};
-  containers.forEach(container => {
-    const rows = container.querySelectorAll('tr.ng-star-inserted.active');
-    rows.forEach(row => {
-      const cells = row.querySelectorAll('td');
-      if (cells.length >= 12) {
-        const idDiv = cells[2].querySelector('div[style*="text-align: right;"]');
-        if (idDiv) {
-          const id = idDiv.innerText.trim();
-          if (id) {
-            const priority = cells[10].innerText.trim();
-            pairs[id] = priority || '0';
-            ids.push(id);
+  const activeRows = document.querySelectorAll('tr.active[data-row-index]');
+  if (!activeRows || activeRows.length === 0) {
+    console.log('Не найдено активных строк с data-row-index.');
+    return Promise.resolve([]);  // Возвращаем пустой Promise
+  }
+  const activeRowNumbers = [];
+  activeRows.forEach(row => {
+    const rowNumber = row.getAttribute('data-row-index');
+    if (rowNumber) activeRowNumbers.push(rowNumber);
+  });
+  // Возвращаем Promise, который разрешится с результатами сопоставления
+  return matchActiveRowsWithLog(activeRowNumbers);
+}
+
+function matchActiveRowsWithLog(activeRowNumbers) {
+  return new Promise((resolve, reject) => {
+    if (!activeRowNumbers || !activeRowNumbers.length) {
+      resolve([]);
+      return;
+    }
+
+    chrome.runtime.sendMessage({ action: 'getLog' }, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(chrome.runtime.lastError);
+        return;
+      }
+      const log = response.log || [];
+      if (!log.length) {
+        resolve([]);
+        return;
+      }
+
+      const results = [];
+      activeRowNumbers.forEach(activeNum => {
+        const num = parseInt(activeNum, 10);
+        if (isNaN(num)) return;
+
+        let found = null;
+        for (let entry of log) {
+          if (entry.shortData && Array.isArray(entry.shortData)) {
+            const match = entry.shortData.find(row => row[0] === num);
+            if (match) {
+              found = { id: match[1], priority: match[2] };
+              break;
+            }
           }
         }
-      }
+        if (found) {
+          results.push(found);
+          console.log(`Строка №${activeNum}: ID=${found.id}, Приоритет=${found.priority}`);
+        } else {
+          console.warn(`Для строки №${activeNum} не найдено данных в логе.`);
+        }
+      });
+
+      resolve(results);
     });
   });
-  return { ids, pairs };
 }
+
 
 // Получение ID из DOM через сообщение Chrome (для popup)
 async function fetchIdsFromDOM(chrome) {

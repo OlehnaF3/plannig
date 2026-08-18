@@ -162,9 +162,9 @@ async function executeFlow(rebuild = true, priority = null, strategyId = '1') {
   
   let domIds = [];
   if (!rebuild) {
-    const { ids, pairs } = Utils.getIdsFromDOM();
-    domIds = ids.map(id => ({ id: String(id), priority: String(pairs[id] || '0') }));
-    console.log(`📌 DOM: получено ${domIds.length} записей`);
+	const idFormDOMS = await Utils.getIdsFromDOM();
+	domIds = idFormDOMS.map(item => ({ id: String(item.id), priority: String(item.priority || '0') }));
+	console.log(`📌 DOM: получено ${domIds.length} записей`);
   }
 
   // Строим карту эффективных приоритетов
@@ -542,5 +542,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const result = Utils.getIdsFromDOM();
     sendResponse(result);
     return true;
+  }
+});
+
+const script = document.createElement('script');
+script.src = chrome.runtime.getURL('inject.js');
+script.onload = function() {
+  this.remove(); // удаляем после загрузки, чтобы не оставался в DOM
+};
+document.documentElement.prepend(script);
+
+// Слушаем сообщения от inject.js и пересылаем в background
+window.addEventListener('message', (event) => {
+  if (event.source !== window) return;
+  if (event.data.type === 'AJAX_RESPONSE') {
+    chrome.runtime.sendMessage({
+      type: 'response',
+      ...event.data.payload
+    });
   }
 });

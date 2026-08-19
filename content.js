@@ -155,7 +155,7 @@ function showPriorityPopup() {
       cancelBtn.style.background = 'transparent';
     });
     cancelBtn.addEventListener('click', () => {
-      document.body.removeChild(overlay);
+      if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
       resolve('cancel');
     });
 
@@ -179,7 +179,7 @@ function showPriorityPopup() {
     okBtn.addEventListener('click', () => {
       const val = input.value.trim();
       if (val === '') {
-        document.body.removeChild(overlay);
+        if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
         resolve(null);
         return;
       }
@@ -188,7 +188,7 @@ function showPriorityPopup() {
         alert('Введите корректное положительное число');
         return;
       }
-      document.body.removeChild(overlay);
+      if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
       resolve(num);
     });
 
@@ -652,19 +652,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         return;
       }
       const log = response?.log || [];
-      const ids = [];
-      const pairs = {};
-      log.forEach(entry => {
-        if (entry.shortData && Array.isArray(entry.shortData)) {
-          entry.shortData.forEach(row => {
-            if (row.length >= 2) {
-              ids.push(row[1]);
-              pairs[row[1]] = row[2] || '0';
-            }
-          });
-        }
-      });
-      sendResponse({ ids, pairs });
+      const result = Utils.parseLogToPairs(log);
+      sendResponse(result);
     });
     return true;
   }

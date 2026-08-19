@@ -134,11 +134,21 @@
                   .forEach(k => localStorage.removeItem(k));
                 console.log(`[TabCache] Удалены данные для вкладки ${id}`);
                 
-                // Очистка данных в background storage
-                chrome.runtime.sendMessage({
-                  action: 'clearLog',
-                  tabIndex: id
-                });
+                // Очистка данных в background storage с обработкой ошибок
+                try {
+                  chrome.runtime.sendMessage({
+                    action: 'clearLog',
+                    tabIndex: id
+                  }, (response) => {
+                    if (chrome.runtime.lastError) {
+                      console.warn('[TabCache] Не удалось соединиться с background:', chrome.runtime.lastError.message);
+                    } else {
+                      console.log(`[TabCache] Background подтвердил очистку для таба ${id}`);
+                    }
+                  });
+                } catch (e) {
+                  console.warn('[TabCache] Ошибка отправки сообщения в background:', e);
+                }
               }
             }
           }

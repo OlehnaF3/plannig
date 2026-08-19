@@ -17,7 +17,7 @@ function getToken() {
   return null;
 }
 
-// Синхронное получение ID из DOM
+// Асинхронное получение ID из DOM с маппингом на лог
 function getIdsFromDOM() {
   const activeRows = document.querySelectorAll('tr.active[data-row-index]');
   if (!activeRows || activeRows.length === 0) {

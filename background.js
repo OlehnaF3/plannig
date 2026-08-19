@@ -4,68 +4,135 @@ chrome.runtime.onInstalled.addListener(() => {
 
 // ======================== ХРАНИЛИЩЕ ПО ВКЛАДКАМ ========================
 // Формат ключей: 'log_{tabIndex}' -> массив данных
+// Используем callback-style API для надёжности с service workers
 
 const STORAGE_PREFIX = 'log_';
+const API_ENDPOINT = '/api/data/flexView/so.SO_H';
 
-async function getLogStorage() {
-  const result = await chrome.storage.local.get(null);
-  const logs = {};
-  for (const key in result) {
-    if (key.startsWith(STORAGE_PREFIX)) {
-      logs[key] = result[key];
-    }
+/** Получить ключ storage для таба */
+function getStorageKey(tabIndex) {
+  if (tabIndex === null || tabIndex === undefined) return null;
+  return `${STORAGE_PREFIX}${tabIndex}`;
+}
+
+/** Прочитать лог таба (callback-style) */
+function readTabLog(tabIndex, callback) {
+  const key = getStorageKey(tabIndex);
+  if (!key) {
+    callback([]);
+    return;
   }
-  return logs;
+  chrome.storage.local.get(key, (result) => {
+    callback(result[key] || []);
+  });
 }
 
-async function getLogForTab(tabIndex) {
-  const key = `${STORAGE_PREFIX}${tabIndex}`;
-  const result = await chrome.storage.local.get(key);
-  return result[key] || [];
+/** Сохранить лог таба (callback-style) */
+function writeTabLog(tabIndex, logArray, callback) {
+  const key = getStorageKey(tabIndex);
+  if (!key) {
+    if (callback) callback();
+    return;
+  }
+  // Ограничиваем размер лога
+  if (logArray.length > 100) {
+    logArray = logArray.slice(0, 100);
+  }
+  chrome.storage.local.set({ [key]: logArray }, () => {
+    if (callback) callback();
+  });
 }
 
-async function saveLogForTab(tabIndex, logArray) {
-  const key = `${STORAGE_PREFIX}${tabIndex}`;
-  if (logArray.length > 100) logArray.pop();
-  await chrome.storage.local.set({ [key]: logArray });
+/** Очистить лог таба (callback-style) */
+function deleteTabLog(tabIndex, callback) {
+  const key = getStorageKey(tabIndex);
+  if (!key) {
+    if (callback) callback();
+    return;
+  }
+  chrome.storage.local.remove(key, () => {
+    console.log(`[TabLog] Очищен кэш для таба ${tabIndex}`);
+    if (callback) callback();
+  });
 }
 
-async function addLogEntryToTab(tabIndex, entry) {
+/** Очистить все логи вкладок (callback-style) */
+function deleteAllTabLogs(callback) {
+  chrome.storage.local.get(null, (result) => {
+    const keysToDelete = [];
+    for (const key in result) {
+      if (key.startsWith(STORAGE_PREFIX)) {
+        keysToDelete.push(key);
+      }
+    }
+    if (keysToDelete.length > 0) {
+      chrome.storage.local.remove(keysToDelete, () => {
+        console.log(`[TabLog] Очистжены все логи: ${keysToDelete.length} записей`);
+        if (callback) callback();
+      });
+    } else {
+      if (callback) callback();
+    }
+  });
+}
+
+/**
+ * Добавить запись в лог таба (async-safe callback pattern)
+ * Важно: используем callback-style для надёжности с Chrome service workers
+ */
+function addLogEntryToTab(tabIndex, entry, callback) {
   // Фильтр: только нужный эндпоинт
-  if (!entry.url.includes('/api/data/flexView/so.SO_H')) {
+  if (!entry.url || !entry.url.includes(API_ENDPOINT)) {
+    if (callback) callback();
     return;
   }
 
-  if (!tabIndex && tabIndex !== 0) return;
+  // Валидация tabIndex: только числа >= 0
+  if (tabIndex === null || tabIndex === undefined || (typeof tabIndex !== 'number' && typeof tabIndex !== 'string')) {
+    console.warn('[TabLog] Пропущена запись: невалидный tabIndex', tabIndex);
+    if (callback) callback();
+    return;
+  }
+
+  // Преобразуем string tabIndex в number
+  tabIndex = parseInt(tabIndex, 10);
+  if (isNaN(tabIndex)) {
+    console.warn('[TabLog] Пропущена запись: tabIndex не является числом', tabIndex);
+    if (callback) callback();
+    return;
+  }
 
   let shortData = null;
   let resultSize = null;
-  const columns = entry.columns || [];
-  const pageSize = entry.pageSize || null;
 
   try {
-    const parsed = JSON.parse(entry.responseBody);
-    if (parsed.data && Array.isArray(parsed.data)) {
-      const data = parsed.data;
-      const totalRows = data.length;
+    if (!entry.responseBody) {
+      console.warn('[TabLog] Пустой responseBody');
+    } else {
+      const parsed = JSON.parse(entry.responseBody);
+      if (parsed.data && Array.isArray(parsed.data)) {
+        const data = parsed.data;
+        const totalRows = data.length;
 
-      let idIndex = columns.indexOf('soh.id');
-      let pickPriorityIndex = columns.indexOf('soh.pickPriority');
+        const columns = entry.columns || [];
+        let idIndex = columns.indexOf('soh.id');
+        let pickPriorityIndex = columns.indexOf('soh.pickPriority');
 
-      if (idIndex === -1) idIndex = 0;
-      if (pickPriorityIndex === -1) pickPriorityIndex = 8;
+        if (idIndex === -1) idIndex = 0;
+        if (pickPriorityIndex === -1) pickPriorityIndex = 8;
 
-      shortData = data.map((row, index) => {
-        const rowNumber = index;
-        const id = row[idIndex] !== undefined ? row[idIndex] : '';
-        const priority = row[pickPriorityIndex] !== undefined ? row[pickPriorityIndex] : '';
-        return [rowNumber, id, priority];
-      });
+        shortData = data.map((row, index) => {
+          const rowNumber = index;
+          const id = row[idIndex] !== undefined ? row[idIndex] : '';
+          const priority = row[pickPriorityIndex] !== undefined ? row[pickPriorityIndex] : '';
+          return [rowNumber, id, priority];
+        });
 
-      resultSize = parsed.resultSize || totalRows;
+        resultSize = parsed.resultSize || totalRows;
+      }
     }
   } catch (e) {
-    console.warn('Не удалось распарсить ответ:', e);
+    console.warn('[TabLog] Не удалось распарсить ответ:', e);
   }
 
   const logEntry = {
@@ -73,52 +140,64 @@ async function addLogEntryToTab(tabIndex, entry) {
     resultSize: resultSize
   };
 
-  const logArray = await getLogForTab(tabIndex);
-  logArray.unshift(logEntry);
-  await saveLogForTab(tabIndex, logArray);
-  console.log(`[TabLog] Сохранено для таба ${tabIndex}, всего: ${logArray.length}`);
+  // Читаем, модифицируем, пишем — без await
+  readTabLog(tabIndex, (logArray) => {
+    logArray.unshift(logEntry);
+    writeTabLog(tabIndex, logArray, () => {
+      console.log(`[TabLog] Сохранено для таба ${tabIndex}, всего: ${logArray.length}`);
+      if (callback) callback();
+    });
+  });
 }
 
-async function clearLogForTab(tabIndex) {
-  const key = `${STORAGE_PREFIX}${tabIndex}`;
-  await chrome.storage.local.remove(key);
-  console.log(`[TabLog] Очищен кэш для таба ${tabIndex}`);
-}
-
-// Принимаем сообщения от content.js
-chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
+// ======================== ОБРАБОТЧИКИ СООБЩЕНИЙ ========================
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // response — добавляем запись в лог таба
   if (message.type === 'response') {
-    const tabIndex = message.tabIndex !== undefined ? message.tabIndex : null;
-    await addLogEntryToTab(tabIndex, message);
-    sendResponse({ success: true });
-    return true;
+    addLogEntryToTab(message.tabIndex, message, () => {
+      sendResponse({ success: true });
+    });
+    return true; // асинхронный ответ
   }
 
+  // clearLog — очищаем лог таба или все логи
   if (message.action === 'clearLog') {
-    const tabIndex = message.tabIndex !== undefined ? message.tabIndex : null;
-    if (tabIndex !== null) {
-      await clearLogForTab(tabIndex);
+    const tabIndex = message.tabIndex;
+    if (tabIndex !== null && tabIndex !== undefined) {
+      deleteTabLog(tabIndex, () => {
+        sendResponse({ success: true });
+      });
     } else {
-      // Очистка всех вкладок
-      const logs = await getLogStorage();
-      await chrome.storage.local.remove(Object.keys(logs));
+      deleteAllTabLogs(() => {
+        sendResponse({ success: true });
+      });
     }
-    sendResponse({ success: true });
-    return true;
+    return true; // асинхронный ответ
   }
 
+  // getLog — получаем лог таба или все логи
   if (message.action === 'getLog') {
-    const tabIndex = message.tabIndex !== undefined ? message.tabIndex : null;
-    if (tabIndex !== null) {
-      const log = await getLogForTab(tabIndex);
-      sendResponse({ log: log });
+    const tabIndex = message.tabIndex;
+    if (tabIndex !== null && tabIndex !== undefined) {
+      readTabLog(tabIndex, (log) => {
+        sendResponse({ log: log });
+      });
     } else {
-      const logs = await getLogStorage();
-      sendResponse({ logs: logs });
+      // Возвращаем все логи
+      chrome.storage.local.get(null, (result) => {
+        const logs = {};
+        for (const key in result) {
+          if (key.startsWith(STORAGE_PREFIX)) {
+            logs[key] = result[key];
+          }
+        }
+        sendResponse({ logs: logs });
+      });
     }
-    return true;
+    return true; // асинхронный ответ
   }
 
+  // ping — проверка соединения
   if (message.action === 'ping') {
     sendResponse({ pong: true });
     return true;

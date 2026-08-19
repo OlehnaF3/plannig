@@ -5,6 +5,67 @@ if (!API_CONFIG) {
   console.warn('Config not loaded');
 }
 
+// ======================== ТАБ-КЭШИРОВАНИЕ ========================
+// Используем window.TabCache для хранения данных по вкладкам
+
+// Сохранение данных FlexView в кэш текущей вкладки
+function cacheFlexView(flexData) {
+  try {
+    window.TabCache.setItem('flexData', JSON.stringify(flexData));
+    console.log(`[TabCache] Сохранены данные FlexView для таба ${window.TabCache.getActiveTabId()}`);
+  } catch (e) {
+    console.warn('[TabCache] Ошибка сохранения FlexView:', e);
+  }
+}
+
+// Получение данных FlexView из кэша текущей вкладки
+function getCachedFlexView() {
+  try {
+    const cached = window.TabCache.getItem('flexData');
+    if (cached) {
+      console.log(`[TabCache] Получены кэшированные данные FlexView для таба ${window.TabCache.getActiveTabId()}`);
+      return JSON.parse(cached);
+    }
+  } catch (e) {
+    console.warn('[TabCache] Ошибка чтения кэша FlexView:', e);
+  }
+  return null;
+}
+
+// Сохранение результатов планирования в кэш текущей вкладки
+function cachePlanningResults(result) {
+  try {
+    window.TabCache.setItem('planningResults', JSON.stringify(result));
+    console.log(`[TabCache] Сохранены результаты планирования для таба ${window.TabCache.getActiveTabId()}`);
+  } catch (e) {
+    console.warn('[TabCache] Ошибка сохранения результатов:', e);
+  }
+}
+
+// Получение результатов планирования из кэша текущей вкладки
+function getCachedPlanningResults() {
+  try {
+    const cached = window.TabCache.getItem('planningResults');
+    if (cached) {
+      console.log(`[TabCache] Получены кэшированные результаты планирования для таба ${window.TabCache.getActiveTabId()}`);
+      return JSON.parse(cached);
+    }
+  } catch (e) {
+    console.warn('[TabCache] Ошибка чтения кэша результатов:', e);
+  }
+  return null;
+}
+
+// Очистка кэша текущей вкладки (при удалении вкладки)
+function clearCurrentTabCache() {
+  try {
+    window.TabCache.clearCurrentTab();
+    console.log(`[TabCache] Очищен кэш для таба ${window.TabCache.getActiveTabId()}`);
+  } catch (e) {
+    console.warn('[TabCache] Ошибка очистки кэша:', e);
+  }
+}
+
 // ======================== ПОПАП ДЛЯ ВВОДА ПРИОРИТЕТА ========================
 
 function showPriorityPopup() {
@@ -156,15 +217,37 @@ async function executeFlow(rebuild = true, priority = null, strategyId = '1') {
   console.log('🚀 Начинаем выполнение...');
 
   console.log('⏳ 1/4 Получение ID...');
-  const flexData = await Utils.fetchFlexView(token, API_CONFIG.baseUrl);
+  let flexData;
+  // Пытаемся получить из кэша вкладки, если не нашли — запрашиваем с сервера
+  const cachedFlex = getCachedFlexView();
+  if (cachedFlex) {
+    flexData = cachedFlex;
+    console.log(`[TabCache] Использованы кэшированные данные для таба ${window.TabCache.getActiveTabId()}`);
+  } else {
+    flexData = await Utils.fetchFlexView(token, API_CONFIG.baseUrl);
+    cacheFlexView(flexData);
+  }
   const flexIds = flexData.map(item => ({ id: String(item[0]), priority: String(item[1]) }));
   console.log(`✅ FlexView: получено ${flexIds.length} записей`);
   
   let domIds = [];
   if (!rebuild) {
-	const idFormDOMS = await Utils.getIdsFromDOM();
-	domIds = idFormDOMS.map(item => ({ id: String(item.id), priority: String(item.priority || '0') }));
-	console.log(`📌 DOM: получено ${domIds.length} записей`);
+    // Пытаемся получить из кэша вкладки, если не нашли — запрашиваем
+    const cachedDomIds = window.TabCache.getItem('domIds');
+    if (cachedDomIds) {
+      domIds = JSON.parse(cachedDomIds);
+      console.log(`[TabCache] Использованы кэшированные DOM ID для таба ${window.TabCache.getActiveTabId()}`);
+    } else {
+      const idFormDOMS = await Utils.getIdsFromDOM();
+      domIds = idFormDOMS.map(item => ({ id: String(item.id), priority: String(item.priority || '0') }));
+      try {
+        window.TabCache.setItem('domIds', JSON.stringify(domIds));
+        console.log(`[TabCache] Сохранены DOM ID для таба ${window.TabCache.getActiveTabId()}`);
+      } catch (e) {
+        console.warn('[TabCache] Ошибка сохранения DOM ID:', e);
+      }
+    }
+    console.log(`📌 DOM: получено ${domIds.length} записей`);
   }
 
   // Строим карту эффективных приоритетов
@@ -211,9 +294,20 @@ async function executeFlow(rebuild = true, priority = null, strategyId = '1') {
 		console.log('⏳ Пропускаем 2,3 ступень, т.к пустая очередь');
 	}
   console.log('⏳ 4/4 Отправка задач...');
-  await Utils.sendPlanning(token, API_CONFIG.baseUrl, API_CONFIG, grouped, strategyId);
+  const planningResult = await Utils.sendPlanning(token, API_CONFIG.baseUrl, API_CONFIG, grouped, strategyId);
 
   console.log('✅ Все задачи успешно запланированы!');
+  
+  // Сохраняем результаты планирования в кэш вкладки
+  const resultData = {
+    timestamp: new Date().toISOString(),
+    tabId: window.TabCache.getActiveTabId(),
+    grouped: grouped,
+    strategyId: strategyId,
+    success: true
+  };
+  cachePlanningResults(resultData);
+  
   return true;
 }
 
@@ -543,6 +637,37 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse(result);
     return true;
   }
+  if (request.action === 'getTabIndex') {
+    const tabIndex = window.TabCache ? window.TabCache.getActiveTabId() : null;
+    sendResponse({ tabIndex: tabIndex });
+    return true;
+  }
+  if (request.action === 'getLog') {
+    const tabIndex = request.tabIndex !== undefined ? request.tabIndex : 
+                     (window.TabCache ? window.TabCache.getActiveTabId() : null);
+    chrome.runtime.sendMessage({ action: 'getLog', tabIndex: tabIndex }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.error('[TabCache] Ошибка получения лога:', chrome.runtime.lastError);
+        sendResponse({ ids: [], pairs: {} });
+        return;
+      }
+      const log = response?.log || [];
+      const ids = [];
+      const pairs = {};
+      log.forEach(entry => {
+        if (entry.shortData && Array.isArray(entry.shortData)) {
+          entry.shortData.forEach(row => {
+            if (row.length >= 2) {
+              ids.push(row[1]);
+              pairs[row[1]] = row[2] || '0';
+            }
+          });
+        }
+      });
+      sendResponse({ ids, pairs });
+    });
+    return true;
+  }
 });
 
 const script = document.createElement('script');
@@ -552,12 +677,14 @@ script.onload = function() {
 };
 document.documentElement.prepend(script);
 
-// Слушаем сообщения от inject.js и пересылаем в background
+// Слушаем сообщения от inject.js и пересылаем в background с указанием tabIndex
 window.addEventListener('message', (event) => {
   if (event.source !== window) return;
   if (event.data.type === 'AJAX_RESPONSE') {
+    const tabIndex = window.TabCache ? window.TabCache.getActiveTabId() : null;
     chrome.runtime.sendMessage({
       type: 'response',
+      tabIndex: tabIndex,
       ...event.data.payload
     });
   }

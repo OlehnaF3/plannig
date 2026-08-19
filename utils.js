@@ -40,7 +40,8 @@ function matchActiveRowsWithLog(activeRowNumbers) {
       return;
     }
 
-    chrome.runtime.sendMessage({ action: 'getLog' }, (response) => {
+    const tabIndex = (typeof window.TabCache !== 'undefined') ? window.TabCache.getActiveTabId() : null;
+    chrome.runtime.sendMessage({ action: 'getLog', tabIndex: tabIndex }, (response) => {
       if (chrome.runtime.lastError) {
         reject(chrome.runtime.lastError);
         return;
@@ -85,15 +86,44 @@ async function fetchIdsFromDOM(chrome) {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab) return { ids: [], pairs: {} };
-    const response = await chrome.tabs.sendMessage(tab.id, { action: 'getIdsFromDOM' });
-    return {
-      ids: response?.ids || [],
-      pairs: response?.pairs || {}
-    };
+    
+    // Получаем tabIndex
+    const tabIndexResponse = await chrome.tabs.sendMessage(tab.id, { action: 'getTabIndex' });
+    const tabIndex = tabIndexResponse?.tabIndex !== undefined ? tabIndexResponse.tabIndex : null;
+    
+    if (tabIndex === null) return { ids: [], pairs: {} };
+    
+    // Получаем лог для этого таба
+    const logResponse = await chrome.tabs.sendMessage(tab.id, {
+      action: 'getLog',
+      tabIndex: tabIndex
+    });
+    
+    const log = logResponse?.log || [];
+    return parseLogToPairs(log);
   } catch (error) {
     console.error('Ошибка получения ID из DOM:', error);
     return { ids: [], pairs: {} };
   }
+}
+
+// Парсинг лога в пары id->priority
+function parseLogToPairs(log) {
+  const ids = [];
+  const pairs = {};
+  if (!log || !Array.isArray(log)) return { ids, pairs };
+  
+  log.forEach(entry => {
+    if (entry.shortData && Array.isArray(entry.shortData)) {
+      entry.shortData.forEach(row => {
+        if (row.length >= 2) {
+          ids.push(row[1]);
+          pairs[row[1]] = row[2] || '0';
+        }
+      });
+    }
+  });
+  return { ids, pairs };
 }
 
 // ======================== API ФУНКЦИИ ========================
@@ -267,6 +297,7 @@ if (typeof window !== 'undefined') {
     getToken,
     getIdsFromDOM,
     fetchIdsFromDOM,
+    parseLogToPairs,
     fetchFlexView,
     performDownloadReport,
     performPurgeQueue,

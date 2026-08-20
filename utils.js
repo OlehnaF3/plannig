@@ -19,17 +19,15 @@ function getToken() {
 
 // Асинхронное получение ID из DOM с маппингом на лог
 function getIdsFromDOM() {
-  const activeRows = document.querySelectorAll('tr.active[data-row-index]');
-  if (!activeRows || activeRows.length === 0) {
-    console.log('Не найдено активных строк с data-row-index.');
-    return Promise.resolve([]);  // Возвращаем пустой Promise
-  }
-  const activeRowNumbers = [];
-  activeRows.forEach(row => {
-    const rowNumber = row.getAttribute('data-row-index');
-    if (rowNumber) activeRowNumbers.push(rowNumber);
-  });
-  // Возвращаем Promise, который разрешится с результатами сопоставления
+const containers = document.querySelectorAll('app-screen-engine.active.ng-star-inserted');
+  let activeRowNumbers = [];
+  containers.forEach(container => {
+    const rows = container.querySelectorAll('tr.ng-star-inserted.active');
+    rows.forEach(row => {
+        const rowNumber = row.getAttribute('data-row-index');
+		if(rowNumber) activeRowNumbers.push(rowNumber);
+		});
+    });
   return matchActiveRowsWithLog(activeRowNumbers);
 }
 

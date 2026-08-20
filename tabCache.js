@@ -17,9 +17,9 @@
   // ============================
   let activeTabId = null;
   let currentContainer = null;
-  let classObserver = null;       // наблюдатель за изменением класса у кнопок
-  let deleteObserver = null;     // наблюдатель за удалением вкладок
-  let containerObserver = null;  // наблюдатель за появлением контейнера
+  let classObserver = null;
+  let deleteObserver = null;
+  let containerObserver = null;
 
   // ---- Определение ID вкладки (индекс) ----
   function getTabId(buttonElement) {
@@ -33,34 +33,87 @@
 
   // ---- API для работы с хранилищем ----
   window.TabCache = {
-    getItem(key) {
+    // Асинхронное получение значения
+    async getItem(key) {
       if (activeTabId === null || activeTabId === undefined) return null;
-      return localStorage.getItem(`tab_${activeTabId}_${key}`);
+      const storageKey = `tab_${activeTabId}_${key}`;
+      
+      try {
+        const result = await chrome.storage.local.get(storageKey);
+        return result[storageKey] || null;
+      } catch (error) {
+        console.error('[TabCache] Ошибка чтения из chrome.storage:', error);
+        return null;
+      }
     },
-    setItem(key, value) {
-      if (activeTabId === null || activeTabId === undefined) return;
-      localStorage.setItem(`tab_${activeTabId}_${key}`, value);
+    
+    // Асинхронная запись значения
+    async setItem(key, value) {
+      if (activeTabId === null || activeTabId === undefined) return false;
+      const storageKey = `tab_${activeTabId}_${key}`;
+      
+      try {
+        await chrome.storage.local.set({ [storageKey]: value });
+        console.log(`[TabCache] Сохранено: ${storageKey}`);
+        return true;
+      } catch (error) {
+        console.error('[TabCache] Ошибка записи в chrome.storage:', error);
+        return false;
+      }
     },
-    removeItem(key) {
-      if (activeTabId === null || activeTabId === undefined) return;
-      localStorage.removeItem(`tab_${activeTabId}_${key}`);
+    
+    // Асинхронное удаление значения
+    async removeItem(key) {
+      if (activeTabId === null || activeTabId === undefined) return false;
+      const storageKey = `tab_${activeTabId}_${key}`;
+      
+      try {
+        await chrome.storage.local.remove(storageKey);
+        return true;
+      } catch (error) {
+        console.error('[TabCache] Ошибка удаления из chrome.storage:', error);
+        return false;
+      }
     },
+    
     getActiveTabId() {
       return activeTabId;
     },
-    clearCurrentTab() {
-      if (activeTabId === null) return;
+    
+    // Асинхронная очистка данных текущей вкладки
+    async clearCurrentTab() {
+      if (activeTabId === null || activeTabId === undefined) return false;
       const prefix = `tab_${activeTabId}_`;
-      Object.keys(localStorage)
-        .filter(k => k.startsWith(prefix))
-        .forEach(k => localStorage.removeItem(k));
+      
+      try {
+        const allData = await chrome.storage.local.get(null);
+        const keysToRemove = Object.keys(allData).filter(k => k.startsWith(prefix));
+        
+        if (keysToRemove.length > 0) {
+          await chrome.storage.local.remove(keysToRemove);
+          console.log(`[TabCache] Очищено ${keysToRemove.length} ключей для вкладки ${activeTabId}`);
+        }
+        return true;
+      } catch (error) {
+        console.error('[TabCache] Ошибка очистки chrome.storage:', error);
+        return false;
+      }
     },
-    getAllKeys() {
-      if (activeTabId === null) return [];
+    
+    // Асинхронное получение всех ключей текущей вкладки
+    async getAllKeys() {
+      if (activeTabId === null || activeTabId === undefined) return [];
       const prefix = `tab_${activeTabId}_`;
-      return Object.keys(localStorage)
-        .filter(k => k.startsWith(prefix))
-        .map(k => k.replace(prefix, ''));
+      
+      try {
+        const allData = await chrome.storage.local.get(null);
+        return Object.keys(allData)
+          .filter(k => k.startsWith(prefix))
+          .map(k => k.replace(prefix, ''));
+      } catch (error) {
+        console.error('[TabCache] Ошибка получения ключей:', error);
+        return [];
+      }
     }
   };
 
@@ -72,9 +125,6 @@
       return;
     }
     if (newId === activeTabId) return;
-
-    // (Опционально) сохранить состояние старого таба
-    // if (activeTabId !== null) { ... }
 
     activeTabId = newId;
     console.log(`[TabCache] Переключились на таб с индексом ${activeTabId}`);
@@ -122,19 +172,28 @@
     // 2. Наблюдатель за удалением вкладок (очистка данных)
     deleteObserver = new MutationObserver(mutations => {
       mutations.forEach(mutation => {
-        mutation.removedNodes.forEach(node => {
+        mutation.removedNodes.forEach(async node => {
           if (node.nodeType === 1 && node.matches && node.matches('app-tab-item')) {
             const btn = node.querySelector(TAB_BUTTON_SELECTOR);
             if (btn) {
               const id = getTabId(btn);
-              if (id !== null) {
+              if (id !== null && id !== undefined) {
                 const prefix = `tab_${id}_`;
-                Object.keys(localStorage)
-                  .filter(k => k.startsWith(prefix))
-                  .forEach(k => localStorage.removeItem(k));
-                console.log(`[TabCache] Удалены данные для вкладки ${id}`);
                 
-                // Очистка данных в background storage с обработкой ошибок
+                // Очистка данных в chrome.storage.local
+                try {
+                  const allData = await chrome.storage.local.get(null);
+                  const keysToRemove = Object.keys(allData).filter(k => k.startsWith(prefix));
+                  
+                  if (keysToRemove.length > 0) {
+                    await chrome.storage.local.remove(keysToRemove);
+                    console.log(`[TabCache] Удалены данные для вкладки ${id}`);
+                  }
+                } catch (error) {
+                  console.error('[TabCache] Ошибка очистки данных вкладки:', error);
+                }
+                
+                // Очистка данных в background storage
                 try {
                   chrome.runtime.sendMessage({
                     action: 'clearLog',
@@ -170,7 +229,7 @@
     });
     if (!foundActive && buttons.length > 0) {
       // Опционально: активировать первую вкладку, если ни одна не активна
-      // switchToTab(buttons[0]);
+		switchToTab(buttons[0]);
     }
     console.log(`[TabCache] Наблюдатели подключены, активный таб: ${activeTabId}`);
   }
@@ -185,10 +244,7 @@
       deleteObserver.disconnect();
       deleteObserver = null;
     }
-    // Сбрасываем состояние, но оставляем activeTabId? Можно оставить, чтобы при повторном появлении контейнера оно сохранилось.
-    // Но лучше сбросить, так как вкладки будут новыми.
     activeTabId = null;
-    // Очищаем WeakMap (не нужно, он сам очистится при сборке мусора)
     console.log('[TabCache] Наблюдатели отключены');
   }
 
@@ -196,16 +252,12 @@
   function tryInit() {
     const container = document.querySelector(CONTAINER_SELECTOR);
     if (container) {
-      // Если контейнер уже есть, подключаемся
       if (currentContainer !== container) {
-        // Если был другой контейнер, отключаем старых наблюдателей
         if (currentContainer) detachObservers();
         currentContainer = container;
         attachObservers(container);
       }
-      // Если контейнер тот же, ничего не делаем
     } else {
-      // Контейнер отсутствует – отключаем наблюдателей, если они были
       if (currentContainer) {
         detachObservers();
         currentContainer = null;
@@ -215,7 +267,6 @@
 
   // ---- Главный наблюдатель за появлением/исчезновением контейнера ----
   function startRootObserver() {
-    // Наблюдаем за всем document, чтобы поймать появление контейнера
     containerObserver = new MutationObserver(() => {
       tryInit();
     });
@@ -223,7 +274,6 @@
       childList: true,
       subtree: true
     });
-    // Первая проверка
     tryInit();
   }
 
@@ -233,8 +283,5 @@
   } else {
     startRootObserver();
   }
-
-  // Если вдруг контейнер пересоздаётся, но не удаляется (например, обновляется содержимое),
-  // наш tryInit сработает, так как мутации будут пойманы.
 
 })();

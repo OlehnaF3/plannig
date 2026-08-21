@@ -17,63 +17,110 @@ function getToken() {
   return null;
 }
 
-// Синхронное получение ID из DOM
+// Асинхронное получение ID из DOM с маппингом на лог
 function getIdsFromDOM() {
-  const activeRows = document.querySelectorAll('tr.active[data-row-index]');
-  if (!activeRows || activeRows.length === 0) {
-    console.log('Не найдено активных строк с data-row-index.');
-    return Promise.resolve([]);  // Возвращаем пустой Promise
-  }
-  const activeRowNumbers = [];
-  activeRows.forEach(row => {
-    const rowNumber = row.getAttribute('data-row-index');
-    if (rowNumber) activeRowNumbers.push(rowNumber);
+//.   console.log('[LOG] getIdsFromDOM вызвана');
+
+  const containers = document.querySelectorAll('app-screen-engine.active.ng-star-inserted');
+ //.  console.log(`[LOG] Найдено контейнеров: ${containers.length}`);
+
+  let activeRowNumbers = [];
+  containers.forEach((container, idx) => {
+   //.  console.log(`[LOG] Обработка контейнера #${idx}`);
+    const rows = container.querySelectorAll('tr.ng-star-inserted.active');
+  //.   console.log(`[LOG]   В контейнере найдено активных строк: ${rows.length}`);
+
+    rows.forEach(row => {
+      const rowNumber = row.getAttribute('data-row-index');
+      if (rowNumber) {
+        activeRowNumbers.push(rowNumber);
+        //. console.log(`[LOG]   Добавлен номер строки: ${rowNumber}`);
+      } else {
+        console.warn('[WARN] Строка без data-row-index');
+      }
+    });
   });
-  // Возвращаем Promise, который разрешится с результатами сопоставления
+
+  console.log(`[LOG] Итоговый массив номеров строк (${activeRowNumbers.length} шт.):`, activeRowNumbers);
+
+  // Возвращаем результат вызова matchActiveRowsWithLog
+  //. console.log('[LOG] Вызов matchActiveRowsWithLog');
   return matchActiveRowsWithLog(activeRowNumbers);
 }
 
 function matchActiveRowsWithLog(activeRowNumbers) {
+  //. console.log('[LOG] matchActiveRowsWithLog вызвана с аргументом:', activeRowNumbers);
+
   return new Promise((resolve, reject) => {
+    //. console.log('[LOG] Внутри промиса matchActiveRowsWithLog');
+
     if (!activeRowNumbers || !activeRowNumbers.length) {
+     //. console.warn('[WARN] activeRowNumbers пуст или отсутствует — разрешаем с []');
       resolve([]);
       return;
     }
 
-    chrome.runtime.sendMessage({ action: 'getLog' }, (response) => {
+   //. console.log('[LOG] activeRowNumbers содержит элементы, продолжаем');
+
+    const tabIndex = (typeof window.TabCache !== 'undefined') ? window.TabCache.getActiveTabId() : null;
+    //. console.log(`[LOG] tabIndex = ${tabIndex} (${typeof window.TabCache !== 'undefined' ? 'TabCache определён' : 'TabCache НЕ определён'})`);
+
+    //. console.log('[LOG] Отправка chrome.runtime.sendMessage с action=getLog');
+    chrome.runtime.sendMessage({ action: 'getLog', tabIndex: tabIndex }, (response) => {
+      //. console.log('[LOG] Получен ответ от background (в колбэке sendMessage)');
+
       if (chrome.runtime.lastError) {
+       //. console.error('[ERROR] chrome.runtime.lastError:', chrome.runtime.lastError);
         reject(chrome.runtime.lastError);
         return;
       }
+
+     //. console.log('[LOG] Ответ response:', response);
+
       const log = response.log || [];
+      //console.log(`[LOG] Размер полученного лога: ${log.length} записей`);
+
       if (!log.length) {
+       //. console.warn('[WARN] Лог пуст — разрешаем с []');
         resolve([]);
         return;
       }
 
+     //. console.log('[LOG] Начинаем поиск соответствий для каждого номера строки');
+
       const results = [];
       activeRowNumbers.forEach(activeNum => {
+        console.log(`[LOG] Обработка номера строки: ${activeNum}`);
         const num = parseInt(activeNum, 10);
-        if (isNaN(num)) return;
+        if (isNaN(num)) {
+          console.warn(`[WARN] Невозможно преобразовать "${activeNum}" в число — пропускаем`);
+          return;
+        }
 
         let found = null;
         for (let entry of log) {
           if (entry.shortData && Array.isArray(entry.shortData)) {
             const match = entry.shortData.find(row => row[0] === num);
             if (match) {
-              found = { id: match[1], priority: match[2] };
+              found = { 
+                id: match[1],
+                priority: match[2]
+              };
+              console.log(`[LOG] Найдено совпадение в логе для номера ${num}:`, found);
               break;
             }
           }
         }
+
         if (found) {
           results.push(found);
-          console.log(`Строка №${activeNum}: ID=${found.id}, Приоритет=${found.priority}`);
+          //console.log(`Строка №${activeNum}: ID=${found.id}, Приоритет=${found.priority}`);
         } else {
           console.warn(`Для строки №${activeNum} не найдено данных в логе.`);
         }
       });
 
+     //. console.log(`[LOG] Итоговый массив результатов (${results.length} элементов):`, results);
       resolve(results);
     });
   });
@@ -85,15 +132,44 @@ async function fetchIdsFromDOM(chrome) {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab) return { ids: [], pairs: {} };
-    const response = await chrome.tabs.sendMessage(tab.id, { action: 'getIdsFromDOM' });
-    return {
-      ids: response?.ids || [],
-      pairs: response?.pairs || {}
-    };
+    
+    // Получаем tabIndex
+    const tabIndexResponse = await chrome.tabs.sendMessage(tab.id, { action: 'getTabIndex' });
+    const tabIndex = tabIndexResponse?.tabIndex !== undefined ? tabIndexResponse.tabIndex : null;
+    
+    if (tabIndex === null) return { ids: [], pairs: {} };
+    
+    // Получаем лог для этого таба
+    const logResponse = await chrome.tabs.sendMessage(tab.id, {
+      action: 'getLog',
+      tabIndex: tabIndex
+    });
+    
+    const log = logResponse?.log || [];
+    return parseLogToPairs(log);
   } catch (error) {
     console.error('Ошибка получения ID из DOM:', error);
     return { ids: [], pairs: {} };
   }
+}
+
+// Парсинг лога в пары id->priority
+function parseLogToPairs(log) {
+  const ids = [];
+  const pairs = {};
+  if (!log || !Array.isArray(log)) return { ids, pairs };
+  
+  log.forEach(entry => {
+    if (entry.shortData && Array.isArray(entry.shortData)) {
+      entry.shortData.forEach(row => {
+        if (row.length >= 2) {
+          ids.push(row[1]);
+          pairs[row[1]] = row[2] || '0';
+        }
+      });
+    }
+  });
+  return { ids, pairs };
 }
 
 // ======================== API ФУНКЦИИ ========================
@@ -267,6 +343,7 @@ if (typeof window !== 'undefined') {
     getToken,
     getIdsFromDOM,
     fetchIdsFromDOM,
+    parseLogToPairs,
     fetchFlexView,
     performDownloadReport,
     performPurgeQueue,

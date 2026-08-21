@@ -62,9 +62,38 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   let cachedToken = await fetchToken();
 
+  // --- Получение tabIndex активной вкладки ---
+  async function fetchTabIndex() {
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab) return null;
+      const response = await chrome.tabs.sendMessage(tab.id, { action: 'getTabIndex' });
+      return response?.tabIndex !== undefined ? response.tabIndex : null;
+    } catch (error) {
+      console.warn('[Popup] Ошибка получения tabIndex:', error);
+      return null;
+    }
+  }
+
   // --- Получение ID из DOM через Chrome ---
   async function fetchIdsFromDOM() {
-    return Utils.fetchIdsFromDOM(chrome);
+    const tabIndex = await fetchTabIndex();
+    if (tabIndex === null) return { ids: [], pairs: {} };
+    
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab) return { ids: [], pairs: {} };
+      
+      const response = await chrome.tabs.sendMessage(tab.id, {
+        action: 'getLog',
+        tabIndex: tabIndex
+      });
+      const log = response?.log || [];
+      return Utils.parseLogToPairs(log);
+    } catch (error) {
+      console.error('[Popup] Ошибка получения ID из DOM:', error);
+      return { ids: [], pairs: {} };
+    }
   }
 
   // --- Отдельные функции для немедленного выполнения ---

@@ -1,3 +1,140 @@
+let pendingResponses = [];
+let tabCacheReady = false;
+
+// Функция определения tabIndex из DOM
+function getTabIndexFromDOM() {
+  try {
+    const container = document.querySelector('#tabs.cdk-drop-list.tabs-list');
+    if (!container) return null;
+    
+    const items = container.querySelectorAll('app-tab-item');
+    for (let i = 0; i < items.length; i++) {
+      const button = items[i].querySelector('.tab-item');
+      if (button && button.classList.contains('tab-item__selected')) {
+        return i;
+      }
+    }
+    
+    // Если нет выделенной вкладки, но есть вкладки - возвращаем первую
+    return items.length > 0 ? 0 : null;
+  } catch (e) {
+    console.warn('[Content] Ошибка определения tabIndex из DOM:', e);
+    return null;
+  }
+}
+
+// Функция получения tabIndex
+function getCurrentTabIndex() {
+  // Способ 1: Из TabCache
+  if (window.TabCache && window.TabCache.getActiveTabId() !== null && window.TabCache.getActiveTabId() !== undefined) {
+    return window.TabCache.getActiveTabId();
+  }
+  
+  // Способ 2: Из DOM напрямую
+  const domTabIndex = getTabIndexFromDOM();
+  if (domTabIndex !== null) {
+    return domTabIndex;
+  }
+  
+  // Способ 3: Возвращаем null
+  return null;
+}
+
+// Отправка ответа в background
+function sendResponseToBackground(payload) {
+  const tabIndex = getCurrentTabIndex();
+  
+  if (tabIndex === null) {
+    console.warn('[Content] tabIndex не определен, добавляем в очередь');
+    pendingResponses.push(payload);
+    
+    // Пробуем обработать очередь через 500мс
+    setTimeout(processPendingResponses, 500);
+    return;
+  }
+  
+  // Отправляем в background
+  chrome.runtime.sendMessage({
+    type: 'response',
+    tabIndex: tabIndex,
+    ...payload
+  }, (response) => {
+    if (chrome.runtime.lastError) {
+      console.error('[Content] Ошибка отправки в background:', chrome.runtime.lastError);
+    }
+  });
+}
+
+// Обработка очереди отложенных ответов
+function processPendingResponses() {
+  if (pendingResponses.length === 0) return;
+  
+  const tabIndex = getCurrentTabIndex();
+  if (tabIndex === null) {
+    console.warn('[Content] Все еще не можем определить tabIndex');
+    return;
+  }
+  
+  const responses = pendingResponses;
+  pendingResponses = [];
+  
+  responses.forEach(payload => {
+    chrome.runtime.sendMessage({
+      type: 'response',
+      tabIndex: tabIndex,
+      ...payload
+    });
+  });
+  
+  console.log(`[Content] Обработано ${responses.length} отложенных ответов для таба ${tabIndex}`);
+}
+
+// Слушаем сообщения от inject.js
+window.addEventListener('message', (event) => {
+  // Проверяем источник
+  if (event.source !== window) return;
+  
+  // Проверяем тип сообщения
+  if (event.data.type === 'AJAX_RESPONSE') {
+    console.log('[Content] Получен ответ от inject.js:', {
+      url: event.data.payload?.url,
+      status: event.data.payload?.status,
+      timestamp: event.data.payload?.timestamp
+    });
+    
+    // Отправляем в background
+    sendResponseToBackground(event.data.payload);
+  }
+});
+
+// Проверка готовности TabCache
+function checkTabCacheReady() {
+  if (window.TabCache && window.TabCache.getActiveTabId() !== null) {
+    tabCacheReady = true;
+    processPendingResponses();
+    return true;
+  }
+  return false;
+}
+
+// Периодическая проверка готовности
+const readyCheckInterval = setInterval(() => {
+  if (checkTabCacheReady()) {
+    clearInterval(readyCheckInterval);
+    console.log('[Content] TabCache готов к работе');
+  }
+}, 100);
+
+// Остановка проверки через 5 секунд (если TabCache не инициализировался)
+setTimeout(() => {
+  clearInterval(readyCheckInterval);
+  if (!tabCacheReady) {
+    console.warn('[Content] TabCache не инициализировался за 5 секунд');
+    // Используем DOM напрямую
+    processPendingResponses();
+  }
+}, 5000);
+
 // ======================== КОНФИГ ========================
 // Поля: baseUrl, instance, idReport, pickStrategyPolicyId, taskReleasePhases, actions, rabbitQueuePrefix, rabbitQueueSuffix
 const API_CONFIG = window.APP_CONFIG;
@@ -5,6 +142,21 @@ if (!API_CONFIG) {
   console.warn('Config not loaded');
 }
 
+// ======================== ТАБ-КЭШИРОВАНИЕ ========================
+// Используем window.TabCache для хранения данных по вкладкам
+
+
+
+
+// Очистка кэша текущей вкладки (при удалении вкладки)
+async function clearCurrentTabCache() {
+  try {
+    await window.TabCache.clearCurrentTab();
+    console.log(`[TabCache] Очищен кэш для таба ${window.TabCache.getActiveTabId()}`);
+  } catch (e) {
+    console.warn('[TabCache] Ошибка очистки кэша:', e);
+  }
+}
 // ======================== ПОПАП ДЛЯ ВВОДА ПРИОРИТЕТА ========================
 
 function showPriorityPopup() {
@@ -94,7 +246,7 @@ function showPriorityPopup() {
       cancelBtn.style.background = 'transparent';
     });
     cancelBtn.addEventListener('click', () => {
-      document.body.removeChild(overlay);
+      if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
       resolve('cancel');
     });
 
@@ -118,7 +270,7 @@ function showPriorityPopup() {
     okBtn.addEventListener('click', () => {
       const val = input.value.trim();
       if (val === '') {
-        document.body.removeChild(overlay);
+        if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
         resolve(null);
         return;
       }
@@ -127,7 +279,7 @@ function showPriorityPopup() {
         alert('Введите корректное положительное число');
         return;
       }
-      document.body.removeChild(overlay);
+      if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
       resolve(num);
     });
 
@@ -156,16 +308,19 @@ async function executeFlow(rebuild = true, priority = null, strategyId = '1') {
   console.log('🚀 Начинаем выполнение...');
 
   console.log('⏳ 1/4 Получение ID...');
-  const flexData = await Utils.fetchFlexView(token, API_CONFIG.baseUrl);
+  let flexData;
+   flexData = await Utils.fetchFlexView(token, API_CONFIG.baseUrl);
+  
   const flexIds = flexData.map(item => ({ id: String(item[0]), priority: String(item[1]) }));
   console.log(`✅ FlexView: получено ${flexIds.length} записей`);
   
   let domIds = [];
   if (!rebuild) {
-	const idFormDOMS = await Utils.getIdsFromDOM();
-	domIds = idFormDOMS.map(item => ({ id: String(item.id), priority: String(item.priority || '0') }));
-	console.log(`📌 DOM: получено ${domIds.length} записей`);
-  }
+    // Пытаемся получить из кэша вкладки, если не нашли — запрашиваем
+      const idFormDOMS = await Utils.getIdsFromDOM();
+      domIds = idFormDOMS.map(item => ({ id: String(item.id), priority: String(item.priority || '0') }));
+    }
+    console.log(`📌 DOM: получено ${domIds.length} записей`);
 
   // Строим карту эффективных приоритетов
   const effectivePriority = new Map();
@@ -211,9 +366,10 @@ async function executeFlow(rebuild = true, priority = null, strategyId = '1') {
 		console.log('⏳ Пропускаем 2,3 ступень, т.к пустая очередь');
 	}
   console.log('⏳ 4/4 Отправка задач...');
-  await Utils.sendPlanning(token, API_CONFIG.baseUrl, API_CONFIG, grouped, strategyId);
+  const planningResult = await Utils.sendPlanning(token, API_CONFIG.baseUrl, API_CONFIG, grouped, strategyId);
 
   console.log('✅ Все задачи успешно запланированы!');
+
   return true;
 }
 
@@ -543,6 +699,26 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse(result);
     return true;
   }
+  if (request.action === 'getTabIndex') {
+    const tabIndex = window.TabCache ? window.TabCache.getActiveTabId() : null;
+    sendResponse({ tabIndex: tabIndex });
+    return true;
+  }
+  if (request.action === 'getLog') {
+    const tabIndex = request.tabIndex !== undefined ? request.tabIndex : 
+                     (window.TabCache ? window.TabCache.getActiveTabId() : null);
+    chrome.runtime.sendMessage({ action: 'getLog', tabIndex: tabIndex }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.error('[TabCache] Ошибка получения лога:', chrome.runtime.lastError);
+        sendResponse({ ids: [], pairs: {} });
+        return;
+      }
+      const log = response?.log || [];
+      const result = Utils.parseLogToPairs(log);
+      sendResponse(result);
+    });
+    return true;
+  }
 });
 
 const script = document.createElement('script');
@@ -552,12 +728,14 @@ script.onload = function() {
 };
 document.documentElement.prepend(script);
 
-// Слушаем сообщения от inject.js и пересылаем в background
+// Слушаем сообщения от inject.js и пересылаем в background с указанием tabIndex
 window.addEventListener('message', (event) => {
   if (event.source !== window) return;
   if (event.data.type === 'AJAX_RESPONSE') {
+    const tabIndex = window.TabCache ? window.TabCache.getActiveTabId() : null;
     chrome.runtime.sendMessage({
       type: 'response',
+      tabIndex: tabIndex,
       ...event.data.payload
     });
   }

@@ -96,12 +96,12 @@ window.addEventListener('message', (event) => {
   
   // Проверяем тип сообщения
   if (event.data.type === 'AJAX_RESPONSE') {
-    console.log('[Content] Получен ответ от inject.js:', {
+  /*  console.log('[Content] Получен ответ от inject.js:', {
       url: event.data.payload?.url,
       status: event.data.payload?.status,
       timestamp: event.data.payload?.timestamp
     });
-    
+*/    
     // Отправляем в background
     sendResponseToBackground(event.data.payload);
   }
@@ -152,7 +152,7 @@ if (!API_CONFIG) {
 async function clearCurrentTabCache() {
   try {
     await window.TabCache.clearCurrentTab();
-    console.log(`[TabCache] Очищен кэш для таба ${window.TabCache.getActiveTabId()}`);
+    //. console.log(`[TabCache] Очищен кэш для таба ${window.TabCache.getActiveTabId()}`);
   } catch (e) {
     console.warn('[TabCache] Ошибка очистки кэша:', e);
   }
@@ -349,10 +349,11 @@ async function executeFlow(rebuild = true, priority = null, strategyId = '1') {
   // Вывод статистики
   const sortedKeys = Object.keys(grouped).sort((a, b) => Number(a) - Number(b));
   console.log('📊 Группировка всех ID по приоритету:');
-  for (const p of sortedKeys) {
+  
+ /* for (const p of sortedKeys) {
     console.log(`  Приоритет ${p}: ${grouped[p].length} ID`);
   }
-
+*/
 	if(flexIds.length>0)
 	{	 
 	  console.log('⏳ 2/4 Скачивание отчёта...');

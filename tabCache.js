@@ -1,5 +1,4 @@
 // ======================== TAB CACHE ========================
-// Логика из pinner-: хранение данных отдельно для каждой вкладки (по индексу)
 // Использует MutationObserver для отслеживания переключения вкладок
 
 (function() {
@@ -33,88 +32,11 @@
 
   // ---- API для работы с хранилищем ----
   window.TabCache = {
-    // Асинхронное получение значения
-    async getItem(key) {
-      if (activeTabId === null || activeTabId === undefined) return null;
-      const storageKey = `tab_${activeTabId}_${key}`;
-      
-      try {
-        const result = await chrome.storage.local.get(storageKey);
-        return result[storageKey] || null;
-      } catch (error) {
-        console.error('[TabCache] Ошибка чтения из chrome.storage:', error);
-        return null;
-      }
-    },
-    
-    // Асинхронная запись значения
-    async setItem(key, value) {
-      if (activeTabId === null || activeTabId === undefined) return false;
-      const storageKey = `tab_${activeTabId}_${key}`;
-      
-      try {
-        await chrome.storage.local.set({ [storageKey]: value });
-        console.log(`[TabCache] Сохранено: ${storageKey}`);
-        return true;
-      } catch (error) {
-        console.error('[TabCache] Ошибка записи в chrome.storage:', error);
-        return false;
-      }
-    },
-    
-    // Асинхронное удаление значения
-    async removeItem(key) {
-      if (activeTabId === null || activeTabId === undefined) return false;
-      const storageKey = `tab_${activeTabId}_${key}`;
-      
-      try {
-        await chrome.storage.local.remove(storageKey);
-        return true;
-      } catch (error) {
-        console.error('[TabCache] Ошибка удаления из chrome.storage:', error);
-        return false;
-      }
-    },
     
     getActiveTabId() {
       return activeTabId !== null ? activeTabId : 0; //Есть проблемы при инициализации странцы 
-    },
-    
-    // Асинхронная очистка данных текущей вкладки
-    async clearCurrentTab() {
-      if (activeTabId === null || activeTabId === undefined) return false;
-      const prefix = `tab_${activeTabId}_`;
-      
-      try {
-        const allData = await chrome.storage.local.get(null);
-        const keysToRemove = Object.keys(allData).filter(k => k.startsWith(prefix));
-        
-        if (keysToRemove.length > 0) {
-          await chrome.storage.local.remove(keysToRemove);
-          console.log(`[TabCache] Очищено ${keysToRemove.length} ключей для вкладки ${activeTabId}`);
-        }
-        return true;
-      } catch (error) {
-        console.error('[TabCache] Ошибка очистки chrome.storage:', error);
-        return false;
-      }
-    },
-    
-    // Асинхронное получение всех ключей текущей вкладки
-    async getAllKeys() {
-      if (activeTabId === null || activeTabId === undefined) return [];
-      const prefix = `tab_${activeTabId}_`;
-      
-      try {
-        const allData = await chrome.storage.local.get(null);
-        return Object.keys(allData)
-          .filter(k => k.startsWith(prefix))
-          .map(k => k.replace(prefix, ''));
-      } catch (error) {
-        console.error('[TabCache] Ошибка получения ключей:', error);
-        return [];
-      }
     }
+ 
   };
 
   // ---- Переключение на новый таб ----
@@ -178,21 +100,7 @@
             if (btn) {
               const id = getTabId(btn);
               if (id !== null && id !== undefined) {
-                const prefix = `tab_${id}_`;
-                
-                // Очистка данных в chrome.storage.local
-                try {
-                  const allData = await chrome.storage.local.get(null);
-                  const keysToRemove = Object.keys(allData).filter(k => k.startsWith(prefix));
-                  
-                  if (keysToRemove.length > 0) {
-                    await chrome.storage.local.remove(keysToRemove);
-                    console.log(`[TabCache] Удалены данные для вкладки ${id}`);
-                  }
-                } catch (error) {
-                  console.error('[TabCache] Ошибка очистки данных вкладки:', error);
-                }
-                
+                const prefix = `tab_${id}`;              
                 // Очистка данных в background storage
                 try {
                   chrome.runtime.sendMessage({

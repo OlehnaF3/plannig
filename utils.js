@@ -19,14 +19,14 @@ function getToken() {
 
 // Асинхронное получение ID из DOM с маппингом на лог
 function getIdsFromDOM() {
-//.   console.log('[LOG] getIdsFromDOM вызвана');
+  //.   console.log('[LOG] getIdsFromDOM вызвана');
 
   const containers = document.querySelectorAll('app-screen-engine.active.ng-star-inserted');
- //.  console.log(`[LOG] Найдено контейнеров: ${containers.length}`);
+  //.  console.log(`[LOG] Найдено контейнеров: ${containers.length}`);
 
   let activeRowNumbers = [];
   containers.forEach((container, idx) => {
-   //.  console.log(`[LOG] Обработка контейнера #${idx}`);
+  //.  console.log(`[LOG] Обработка контейнера #${idx}`);
     const rows = container.querySelectorAll('tr.ng-star-inserted.active');
   //.   console.log(`[LOG]   В контейнере найдено активных строк: ${rows.length}`);
 
@@ -41,7 +41,7 @@ function getIdsFromDOM() {
     });
   });
 
-  console.log(`[LOG] Итоговый массив номеров строк (${activeRowNumbers.length} шт.):`, activeRowNumbers);
+  //. console.log(`[LOG] Итоговый массив номеров строк (${activeRowNumbers.length} шт.):`, activeRowNumbers);
 
   // Возвращаем результат вызова matchActiveRowsWithLog
   //. console.log('[LOG] Вызов matchActiveRowsWithLog');
@@ -90,7 +90,7 @@ function matchActiveRowsWithLog(activeRowNumbers) {
 
       const results = [];
       activeRowNumbers.forEach(activeNum => {
-        console.log(`[LOG] Обработка номера строки: ${activeNum}`);
+        //. console.log(`[LOG] Обработка номера строки: ${activeNum}`);
         const num = parseInt(activeNum, 10);
         if (isNaN(num)) {
           console.warn(`[WARN] Невозможно преобразовать "${activeNum}" в число — пропускаем`);
@@ -106,7 +106,7 @@ function matchActiveRowsWithLog(activeRowNumbers) {
                 id: match[1],
                 priority: match[2]
               };
-              console.log(`[LOG] Найдено совпадение в логе для номера ${num}:`, found);
+             //. console.log(`[LOG] Найдено совпадение в логе для номера ${num}:`, found);
               break;
             }
           }

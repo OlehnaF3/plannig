@@ -12,13 +12,19 @@ Chrome-расширение для управления волнами план�
 ## Структура проекта
 
 ```
-├── config.js          # Конфигурация (baseUrl, instance, idReport и др.)
-├── content.js         # Content script — внедряет кнопки на страницу
-├── popup.js           # Popup страницы — Dev-панель для ручного управления
-├── popup.html         # HTML popup страницы
-├── manifest.json      # Манифест Chrome-расширения (Manifest V3)
-├── background.js      # Service worker (минимальный)
-├── icons/             # Иконки расширения (16, 32, 48, 64, 128)
+plannig/
+├── icons/                     # Иконки расширения (16, 32, 48, 64, 128)
+├── config.template.js        # Шаблон файла конфигурации
+├── config.js                 # Файл конфигурации (игнорируется git)
+├── manifest.json             # Манифест Chrome-расширения (Manifest V3)
+├── background.js             # Service Worker
+├── content.js                # Основной скрипт, внедряющий UI на страницу WMS
+├── popup.html                # HTML всплывающего окна
+├── popup.js                  # Логика всплывающего окна (Dev-панель)
+├── inject.js                 # Вспомогательный скрипт для инъекций
+├── tabCache.js               # Утилиты для кеширования данных между вкладками
+├── utils.js                  # Общие вспомогательные функции
+└── README.md                 # Этот файл
 ```
 
 ## Установка
@@ -36,11 +42,11 @@ Chrome-расширение для управления волнами план�
 | `baseUrl` | Адрес WMS-сервера | `*` | `*` |
 | `instance` | Имя инстанса | `PROD` | `TEST` |
 | `idReport` | ID отчёта для скачивания | `2` | `1` |
-| `pickStrategyPolicyId` | ID стратегии отбора | `{ standard: '1', simplified: '2' }` |
-| `taskReleasePhases` | Фазы выпуска задач | `['0', '0']` |
-| `actions` | Действие | `0` |
-| `rabbitQueuePrefix` | Префикс очереди RabbitMQ | `ULR` |
-| `rabbitQueueSuffix` | Суффикс очереди | `ALLOC` |
+| `pickStrategyPolicyId` | ID стратегии отбора | `{ standard: '1', simplified: '2' }` | `{ standard: '1', simplified: '2' }`
+| `taskReleasePhases` | Фазы выпуска задач | `['0', '0']` | `['0', '0']`
+| `actions` | Действие | `0` | `0`
+| `rabbitQueuePrefix` | Префикс очереди RabbitMQ | `ULR` | `ULR` 
+| `rabbitQueueSuffix` | Суффикс очереди | `ALLOC` | `ALLOC`
 
 ### Создание файла конфигурации
 

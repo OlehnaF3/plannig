@@ -175,6 +175,12 @@ function addLogEntryToTab(tabIndex, entry, callback) {
     console.warn('[Background] Не удалось распарсить ответ:', e);
   }
   
+  const hasRealData = shortData.some(row => row[1] !== '' || row[2] !== '');
+if (!hasRealData) {
+  console.log('[Background] Все записи пустые (ID и приоритет отсутствуют), пропускаем сохранение');
+  if (callback) callback();
+  return;
+}
   const logEntry = {
     shortData: shortData,
     resultSize: resultSize,

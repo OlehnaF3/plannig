@@ -77,7 +77,7 @@
     },
     
     getActiveTabId() {
-      return activeTabId;
+      return activeTabId !== null ? activeTabId : 0; //Есть проблемы при инициализации странцы 
     },
     
     // Асинхронная очистка данных текущей вкладки

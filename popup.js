@@ -151,36 +151,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       // 1) flexView
       Utils.updateStatus(statusEl, '⏳ 1/4 Выполнение flexView...', 'status-message info');
       const flexData = await Utils.fetchFlexView(cachedToken, API_CONFIG.baseUrl);
-      const data = flexData.data;
-      if (!Array.isArray(data)) throw new Error('view: неожиданный формат данных');
+      const flexIds = flexData.map(item => ({ id: String(item[0]), priority: String(item[1]) }));
+      let logLines = [`✅ flexView: получено ${flexIds.length} записей`];
 
-      const flexItems = data.map(item => ({
-        id: String(item[0]),
-        priority: String(item[1])
-      }));
-
-      let logLines = [`✅ flexView: получено ${flexItems.length} записей`];
-      let allItems = flexItems;
-
-      if (!rebuild) {
-        // 2) Получение ID и приоритетов из DOM
-        const { ids: domIds, pairs } = await fetchIdsFromDOM();
-        let domItems = [];
-        if (domIds.length > 0) {
-          domItems = domIds.map(id => ({
-            id: String(id),
-            priority: String(pairs[id] || '0')
-          }));
-          logLines.push(`📌 DOM: получено ${domItems.length} записей`);
-        } else {
-          logLines.push('📌 DOM: записи не найдены');
-        }
-        allItems = allItems.concat(domItems);
-      }
-      logLines.push(`📦 Всего записей для группировки: ${allItems.length}`);
+      logLines.push(`📦 Всего записей для группировки: ${flexIds.length}`);
 
       // 3) Группировка по приоритету
-      const grouped = Utils.groupByPriority(allItems);
+      const grouped = Utils.groupByPriority(flexIds);
       const sortedPriorities = Object.keys(grouped).sort((a, b) => Number(a) - Number(b));
 
       let report = '\n📊 Группировка по приоритетам:\n';

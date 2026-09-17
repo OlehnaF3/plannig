@@ -612,8 +612,24 @@ function addButtonsToFooter() {
   // Кнопка "Отправить в отбор" (с попапом приоритета)
   if (!container.querySelector('[data-custom-send]')) {
     const btnSend = createCustomButton('Отправить в отбор', 'send', async () => {
+		
       const priority = await showPriorityPopup();
       if (priority === 'cancel') return;
+	   if (priority !== null && priority !== undefined) {
+        try {
+          chrome.runtime.sendMessage({
+            type: 'forecast:track',
+            eventType: 'priority_set',
+            payload: { priority: priority, source: 'manual' }
+          }, function () {
+            if (chrome.runtime.lastError) {
+              console.warn('[Plannig] track error:', chrome.runtime.lastError.message);
+            }
+          });
+        } catch (e) {
+          console.warn('[Plannig] track send failed:', e);
+        }
+      }
       let progress = null;
       try {
         progress = showProgressPopup('Отправка выбранных строк в отбор...');
